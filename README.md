@@ -26,7 +26,9 @@ bfrec:
         Force update of the bootloader only.
 
 bfvcheck:
-bfvcheck.service:
 bfver:
+        Software version checking scripts.
 
-        Software version checking.
+bfvcheck.service:
+        A systemd service config file for enabling version
+        checks when booting.
