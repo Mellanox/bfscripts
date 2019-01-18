@@ -1,0 +1,136 @@
+#!/bin/sh
+
+# Copyright (c) 2018, Mellanox Technologies
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# The views and conclusions contained in the software and documentation are those
+# of the authors and should not be interpreted as representing official policies,
+# either expressed or implied, of the FreeBSD Project.
+
+set -e
+
+#
+# This script relies on dracut, a low-level tool, for generating an initramfs
+# for the running kernel. This script generates the configuration file for
+# dracut, installs the necessary Mellanox modules and creates a script file
+# that enables IPoIB and that supports NFS mounting rootfs while PXE booting
+# in IB mode.
+#
+
+PROGNAME=$(basename "$0")
+# Check arguments. For now, only output initramfs image is expected.
+# if the output image argument is ommitted, then the default location
+# /boot/initramfs-<kernel version>-nfs-ib.img is used.
+if [ $# -gt 1 ]; then
+    echo "Usage: $PROGNAME <initramfs>"
+	exit 1
+elif [ $# -eq 1 ]; then
+	INITRAMFS=$1
+else
+    INITRAMFS=/boot/initramfs-$(uname -r)-nfs-ib.img
+fi
+
+# Don't continue if we don't have dracut support
+if [ ! -x "/usr/bin/dracut" ] || [ ! -d "/usr/lib/dracut" ] \
+        || [ ! -f "/etc/dracut.conf" ]; then
+    echo "$PROGNAME: *** nothing to do: dracut is not installed! ***"
+    exit 1
+fi
+
+
+# Create temporary directories to save the configuration file and the
+# script file.
+TMP_DIR=/usr/lib/dracut/tmp
+if [ ! -d $TMP_DIR ]; then
+	mkdir -p ${TMP_DIR}/conf
+	mkdir -p ${TMP_DIR}/sh
+fi
+
+# Dracut configuration file. This configuration is loaded during the
+# initialisation phase of dracut.
+CONF_FILE=01-mlxib-nfs.conf
+
+# Script file to add to dracut hooks. This script is hooked to pre-udev
+# and is executed at system boot (init) phase.
+SH_IPOIB=90-ipoib-start.sh
+
+# Set temporary path files
+TMP_CONF=$TMP_DIR/conf/$CONF_FILE
+TMP_SH=$TMP_DIR/sh/$SH_IPOIB
+
+
+# In order to PXE boot in IB mode and mount an NFS-rootfs, the Mellanox
+# network drivers must be loaded. Hence, set the dracut option to add the
+# needed IB and network drivers.
+MOD_IB=
+LIB_IB=/lib/modules/$(uname -r)/updates/drivers/infiniband
+MOD_LIST=$(find "$LIB_IB" -name "*.ko")
+for m in $MOD_LIST; do
+	modname=$(basename "$m" ".ko")
+	MOD_IB="$MOD_IB $modname"
+done
+MOD_NET="ipv6 mlx5_core mlx_compat $MOD_IB"
+
+# Write dracut configuration file
+cat <<EOF > $TMP_CONF
+dracutmodules+="network kernel-network-modules nfs udev-rules base"
+add_drivers+="$MOD_NET"
+EOF
+
+# In order to expose and setup the IB network interfaces to the system
+# at the boot (init) stage, the IPoIB support must be enabled and the
+# driver loaded. The following script is installed into the initramfs
+# and is called prior to the interface configuration. Dracut init scripts
+# configure the IB interfaces, i.e., ifup and dhcp, prior to nfsroot setup.
+# This requires that the TFTP, DHCP and NFS servers are set properly.
+
+LIB_NET_MLX=/lib/modules/$(uname -r)/updates/drivers/net/ethernet/mellanox
+# Write script to enable IPoIB support
+cat <<EOF > $TMP_SH
+#! /bin/sh
+# Start the mellanox network driver.
+[ ! -f $LIB_NET_MLX/mlx5/core/mlx5_core.ko ] && exit 1
+modprobe mlx5_core 2>/dev/null
+# Start IPoIB support, i.e. load the kernel module
+[ -f $LIB_IB/ulp/ipoib/ib_ipoib.ko ] && modprobe ib_ipoib 2>/dev/null
+EOF
+
+# It is recommended that a given dracut configuration is put in separate
+# files in /etc/dracut.conf.d named "<name>.conf". If the directory does
+# not exist then edit /etc/dracut.conf.
+if [ -d "/etc/dracut.conf.d" ]; then
+	CONF=/etc/dracut.conf.d/$CONF_FILE
+	# Cleanup existing configuration
+	[ -e "$CONF" ] && rm -f $CONF
+else
+	CONF=/etc/dracut.conf
+fi
+cp $TMP_CONF $CONF
+
+# Run dracut to create the initramfs image
+dracut -f -i $TMP_DIR/sh /lib/dracut/hooks/pre-udev/ "$INITRAMFS"
+
+# These temporary files are removed at the end; in case of failure
+# that would be helpful for debugging and unit testing.
+rm -f $TMP_SH $TMP_CONF
+[ -d $TMP_DIR ] && rm -fr $TMP_DIR

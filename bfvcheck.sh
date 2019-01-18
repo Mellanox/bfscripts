@@ -1,0 +1,138 @@
+#!/bin/sh -e
+
+# Copyright (c) 2018, Mellanox Technologies
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# The views and conclusions contained in the software and documentation are those
+# of the authors and should not be interpreted as representing official policies,
+# either expressed or implied, of the FreeBSD Project.
+
+echo "Beginning version check..."
+
+# bfb file used to extract ATF/UEFI's expected version information
+BOOTIMG_LOCATION=/lib/firmware/mellanox/boot/default.bfb
+bfver=/opt/mellanox/scripts/bfver
+
+# find the firmware package on the system
+mlxfw=/opt/mellanox/mlnx-fw-updater/firmware/mlxfwmanager_sriov_dis_aarch64
+
+if [ ! -f $mlxfw ]; then
+    # FW package not in /opt/mellanox, we're probably running on yocto
+    mlxfw=/lib/firmware/mellanox/mlxfwmanager_sriov_dis_aarch64
+fi
+
+if [ ! -f $mlxfw ]; then
+    # FW package not found anywhere, so error out fw check
+    # We keep going to check bootloader versions anyway.
+    echo "The firmware package could not be located."
+    echo "Firmware check will fail."
+    echo ""
+    mlxfw=false
+fi
+
+# If set to anything, the script will exit with an exit code of 1.
+version_error=
+
+# Compares two version strings, and prints a big red error if they aren't
+# equal.
+# $1 and $2 - the version strings to compare
+# $3 - the name of the software we're testing the version of
+compare_versions () {
+    if [ "$1" != "$2" ]; then
+        printf "\033[0;31mWARNING: %s VERSION DOES NOT MATCH RECOMMENDED!\033[0m\n" "$3"
+        version_error=ERR
+        echo ""
+    fi
+}
+
+BUILD_ATF=$(strings $BOOTIMG_LOCATION | grep -m 1 "(\(release\|debug\))")
+BUILD_UEFI=$(strings -e l $BOOTIMG_LOCATION | grep "BlueField" |\
+    cut -d':' -f 2)
+
+bfver_out="$( $bfver )"
+
+RUNTIME_ATF=$( echo "$bfver_out" | grep -m 1 "ATF" | cut -d':' -f 2,3 | \
+    sed -e 's/[[:space:]]//' )
+RUNTIME_UEFI=$( echo "$bfver_out" | grep -m 1 "UEFI" | cut -d':' -f 2 | \
+    sed -e 's/[[:space:]]//' )
+
+mlxfw_out=$( $mlxfw --query )
+
+FW_UPDATED=no
+
+if [ $? -eq 0 ]; then
+    # awk is used here to ease dealing with the spaces used in mlxfwmanager
+    # output, and to make sure we pick the right FW line
+    FIRMWARE_VERSIONS=$( echo "$mlxfw_out" | awk '($1 == "FW") && ($2 != "(Running)") { print $2 "," $3 }' )
+
+    BUILD_FW=$( echo "$FIRMWARE_VERSIONS" | cut -d',' -f 2 )
+    RUNTIME_FW=$( echo "$FIRMWARE_VERSIONS" |  cut -d',' -f 1 )
+
+    # If FW (Running) line exists, user updated firmware, but did
+    # not power cycle, so output message further down
+    if [ ! -z "$(echo "\"$mlxfw_out\"" | grep 'FW *(Running)' )" ]; then
+        FW_UPDATED=yes
+    fi
+else
+    echo "There was an error detecting the firmware version."
+    echo ""
+    BUILD_FW=ERROR
+    RUNTIME_FW=
+fi
+
+cat << EOF
+-RECOMMENDED VERSIONS-
+ATF: $BUILD_ATF
+UEFI: $BUILD_UEFI
+FW: $BUILD_FW
+EOF
+
+cat << EOF
+
+-INSTALLED VERSIONS-
+ATF: $RUNTIME_ATF
+UEFI: $RUNTIME_UEFI
+FW: $RUNTIME_FW
+
+EOF
+
+compare_versions "$BUILD_ATF" "$RUNTIME_ATF" "ATF"
+compare_versions "$BUILD_UEFI" "$RUNTIME_UEFI" "UEFI"
+compare_versions "$BUILD_FW" "$RUNTIME_FW" "FW"
+
+if [ "$FW_UPDATED" = "yes" ]; then
+    cat << EOF
+WARNING: The firmware has been updated, but the chassis must be
+power cycled for changes to take effect.
+
+EOF
+fi
+
+echo "Version check complete."
+
+if [ -z "$version_error" ]; then
+    echo "No issues found."
+    exit 0
+fi
+
+exit 1

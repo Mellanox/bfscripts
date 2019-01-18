@@ -1,0 +1,11 @@
+[Unit]
+Description=Firmware and bootloader version check for Bluefield
+After=getty.target
+
+[Service]
+Type=idle
+ExecStart=/opt/mellanox/scripts/bfvcheck
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target

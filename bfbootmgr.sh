@@ -1,0 +1,111 @@
+#!/bin/sh
+
+# Copyright (c) 2017, Mellanox Technologies
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# The views and conclusions contained in the software and documentation are those
+# of the authors and should not be interpreted as representing official policies,
+# either expressed or implied, of the FreeBSD Project.
+
+set -e
+
+PROGNAME=$(basename "$0")
+
+usage()
+{
+    cat <<EOF
+Usage: $PROGNAME [install <distro <kimage> <args>] [uninstall]
+EOF
+}
+
+# Check arguments. For now, only boot entries install/uninstall are
+# supported. Further actions might be added later on.
+if [ $# -ge 1 ]; then
+    ACTION=$1
+else
+    usage
+    exit 1
+fi
+
+
+# Clean up boot options using 'efibootmgr'. This latter requires
+# that the kernel support access to EFI non-volatile variables.
+# The UEFI system requires several kernel configuration options.
+# Since this script might be used after booting with initramfs
+# only, we prefer to not enable those EFI configurations options.
+# Alternatively, we use the efivarfs (EFI VARiable File System)
+# interface (CONFIG_EFIVAR_FS) mounted using efivarfs kernel module
+# at /sys/firmware/efi/efivars to remove EFI variables.
+
+efivars=/sys/firmware/efi/efivars
+
+# Linux kernel exposes EFI variables data to userspace via efivarfs
+# interface. Thus mount it, if needed.
+test "$(ls -A $efivars)" || mount -t efivarfs none $efivars
+
+if [ "$ACTION" = "uninstall" ]; then
+    # Check whether boot options exist
+    boot_order=$(efibootmgr | grep BootOrder)
+    if [ "$(echo "$boot_order" | cut -f1 -d':')" = "BootOrder" ]; then
+        options=$(echo "$boot_order" | cut -f2 -d':' | sed -e 's/,/ /g')
+        if [ -n "$options" ]; then
+            # Clear boot options
+            for opt in $options; do
+                efibootmgr -b "$opt" -B
+            done
+        fi
+    fi
+    # Second round: there might be old boot entries not part of the
+    # boot order. Those entries might be installed after firmware
+    # recovery. Boot entries are formatted as BootXXXX where XXXX refer
+    # to an hexadecimal number. Thus extract that number only.
+    options=$(efibootmgr | grep -F "*" | cut -f1 -d'*' | cut -c5-)
+    # Check whether extra boot entries exist.
+    if [ -n "$options" ]; then
+        # Clear boot options
+        for opt in $options; do
+            efibootmgr -b "$opt" -B
+        done
+    fi
+fi
+
+if [ "$ACTION" = "install" ]; then
+    # Check arguments
+    if [ $# -lt 4 ]; then
+        echo "$PROGNAME: invalid operand(s)"
+        echo "Try: $PROGNAME install <distro> <kimage> <args>"
+        exit 1
+    fi
+    # Set default arguments
+    disk="/dev/mmcblk0"
+    part="1"
+    # Read input parameters.
+    distro="$2"
+    kimage="$3"
+    bootargs="$4"
+    # Create the boot entry.
+    echo "Distro      : $distro"
+    echo "Kernel Image: $kimage"
+    echo "Command line: $bootargs"
+    efibootmgr -c -d $disk -p $part -l "$kimage" -L "$distro" -u "$bootargs"
+fi

@@ -1,0 +1,290 @@
+#!/bin/sh -e
+
+# Copyright (c) 2017, Mellanox Technologies
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# The views and conclusions contained in the software and documentation are those
+# of the authors and should not be interpreted as representing official policies,
+# either expressed or implied, of the FreeBSD Project.
+
+usage()
+{
+  cat <<EOF
+Usage: $0 [--help] [--unloadmods] [--minifs] [--fullfs path]
+EOF
+}
+
+PARSED_OPTIONS=$(getopt -n "$0" -o h \
+    --long "help unloadmods minifs fullfs" -- "$@")
+
+eval set -- "$PARSED_OPTIONS"
+
+while true
+do
+  case $1 in
+      -h | --help)
+          usage
+          exit 0
+          ;;
+      --unloadmods)
+          unload_modules=1
+          shift
+          ;;
+      --minifs)
+          mini_root=1
+          shift
+          ;;
+      --fullfs)
+          full_root=1
+          shift
+          ;;
+      --)
+          shift
+          break
+          ;;
+  esac
+done
+
+# If both full_root and mini_root are set to a non-empty string
+# we consider that an error.  One important thing to remember is
+# that if we install the mini-fs and then install the full root fs
+# OVER the mini-fs (without wiping the partition) we will end up
+# with a strange hybrid root file system.  This happens, for example,
+# when some utility is found on the initramfs... but NOT on the full
+# root fs.
+
+if [ -n "${full_root}" ] && [ -n "${mini_root}" ]; then
+cat <<EOF
+
+**********************************************************************
+***                                                                ***
+***  You cannot install both the mini AND full root file systems.  ***
+***                                                                ***
+**********************************************************************
+EOF
+    exit 1
+fi
+
+# This function updates boot options. This cleans up the actual boot
+# options and installs a new boot option.
+update_boot()
+{
+    # First, set boot parameters: set the distribution name and the
+    # relative path to the kernel image in the boot partition, i.e.,
+    # should be located at /dev/mmcblk0p1/ (must be consistent with
+    # disk partitioning).
+    distro="Yocto"
+    kimage="\Image"
+
+    # Then, set boot arguments: Read current 'console' and 'earlycon'
+    # parameters, and append the root filesystem parameters.
+    bootarg="$(cat /proc/cmdline | sed 's/initrd=initramfs//')"
+    bootarg="$(echo "$bootarg" root=/dev/mmcblk0p2 rootwait)"
+
+    # Clean up actual boot entries.
+    /opt/mlnx/scripts/bfbootmgr uninstall
+}
+
+# This function installs grub and sets it as the default boot option
+install_grub()
+{
+    efivars=/sys/firmware/efi/efivars
+    efidir=/mnt/boot
+    bootdir=/mnt/boot
+    localedir=/mnt/usr/share/locale
+    grubcfg=/mnt/boot/grub/grub.cfg
+
+    mount /dev/mmcblk0p2 /mnt
+    mount /dev/mmcblk0p1 /mnt/boot
+
+    test "$(ls -A $efivars)" || mount -t efivarfs none $efivars
+
+    mkdir -p $localedir
+    grub-install /dev/mmcblk0p1 --locale-directory=$localedir --efi-directory=$efidir --boot-directory=$bootdir
+
+    touch $grubcfg
+    echo \
+"#
+# /boot/grub/grub.cfg
+#
+
+# See the official grub documentation for more information.
+
+# Set menu colors
+set menu_color_normal=white/blue
+set menu_color_highlight=light-blue/white
+
+# Set menu display time
+set timeout=10
+
+# Set the default boot entry (first is 0)
+set default=0
+
+# Boot entries:
+# Yocto
+menuentry "Yocto from eMMC" {
+        linux (hd0,gpt1)/Image $bootarg
+}
+" > $grubcfg
+
+    umount /mnt/boot
+    umount /mnt
+}
+
+if [ -n "${full_root}" ] && [ $# -eq 1 ]; then
+    fspath=$1
+elif [ -n "${full_root}" ] && [ $# -ne 1 ]; then
+    echo "Too few arguments"
+    exit 1
+elif [ $# -ne 0 ]; then
+    echo "Too many arguments"
+    exit 1
+fi
+
+# Flash the two boot partitions.
+mlxbf-bootctl -s -d /dev/mmcblk0 -b /lib/firmware/mellanox/default.bfb
+mlxbf-bootctl -s -d /dev/mmcblk0 -b /lib/firmware/mellanox/default.bfb
+
+# Create the yocto partitions.
+/opt/mlnx/scripts/bfpart
+
+# Update the firmware and boot the current kernel image.
+update_boot
+
+mkdosfs /dev/mmcblk0p1
+
+yes | mkfs.ext4 /dev/mmcblk0p2
+
+if [ -n "${mini_root}" ]; then
+    # Copy the boot Image.
+    mount /dev/mmcblk0p1 /mnt; cp /boot/Image /mnt; umount /mnt
+
+    # Copy the initramfs.
+    mount /dev/mmcblk0p2 /mnt
+    cd /
+    cp -ar bin boot etc home init lib lib64 media opt root sbin usr var /mnt
+    cd /mnt
+    mkdir -p dev mnt sys tmp proc run
+    cd /
+    umount /mnt
+
+    install_grub
+
+cat <<EOF
+
+**********************************************************************
+***                                                                ***
+***   YOU HAVE NOT INSTALLED THE FULL ROOT FILE SYSTEM             ***
+***                                                                ***
+***   The "minifs" you have installed is simply a copy of the      ***
+***   initramfs.                                                   ***
+***                                                                ***
+***   Note that copying the initramfs to your eMMC parition is     ***
+***   easy and fast but does not include many Linux packages you   ***
+***   most likely want installed on your system.  For example,     ***
+***   Mellanox OFED is NOT on the initramfs (minifs).              ***
+***   The initramfs is normally used during installation of        ***
+***   non-Yocto linux distros and very basic system testing        ***
+***   only.                                                        ***
+***                                                                ***
+***   You should install the full root fs or the full root dev     ***
+***   fs (contains binutils and kernel source) for a fully         ***
+***   functional system.                                           ***
+***                                                                ***
+***   Copy one of the following images to /tmp on the initramfs    ***
+***   and then specify that file as an argument to bfinst as       ***
+***   shown below.                                                 ***
+***                                                                ***
+***     core-image-full-BlueField-<version>.tar.xz                 ***
+***     core-image-full-dev-BlueField-<version>.tar.xz             ***
+***                                                                ***
+***   /opt/mlnx/scripts/bfinst --fullfs /tmp/<core-image>          ***
+***                                                                ***
+**********************************************************************
+EOF
+fi
+
+sync
+
+if [ -n "${unload_modules}" ]; then
+    # Unload various kernel modules before continuing.
+    rmmod i2c_mlx gpio_mlxbf nfit libnvdimm mlxbf_livefish mlx_bootctl
+    rmmod mlx5_ib ib_core mlx5_core mlxfw mlx_compat
+fi
+
+if [ -n "${full_root}" ]; then
+    mount /dev/mmcblk0p2 /mnt
+    echo "Installing root file system.  This will take a few minutes."
+    # busybox version of tar requires EXTRACT_UNSAFE_SYMLINKS?
+    EXTRACT_UNSAFE_SYMLINKS=1 tar Jxf "$fspath" -C /mnt
+    sync
+
+    mkdir -p /tmp/bootpart
+    mount /dev/mmcblk0p1 /tmp/bootpart
+    rsync -a -L /mnt/boot/ /tmp/bootpart
+
+    umount /tmp/bootpart
+    umount /mnt
+
+    install_grub
+fi
+
+if [ -z $full_root ] && [ -z $mini_root ]; then
+    mount /dev/mmcblk0p1 /mnt; cp /boot/Image /mnt; umount /mnt
+
+cat <<EOF
+
+**********************************************************************
+***                                                                ***
+***   YOUR SYSTEM MAY CRASH AFTER REBOOT                           ***
+***                                                                ***
+***   Missing root file system in /dev/mmcblk0p2 !!                ***
+***                                                                ***
+***   Please make sure that you install a root file system prior   ***
+***   to reboot. You may copy the initramfs file system to         ***
+***   /dev/mmcblk0p2 by doing the following:                       ***
+***                                                                ***
+***   /opt/mlnx/scripts/bfinst --minifs                            ***
+***                                                                ***
+***   Note that copying the initramfs to your eMMC parition is     ***
+***   easy and fast but does not include many Linux packages you   ***
+***   most likely want on your system.  For example, Mellanox OFED ***
+***   is NOT on the initramfs (minifs).  The initramfs is normally ***
+***   used for installation of non-Yocto linux distros and very    ***
+***   basic system testing only.                                   ***
+***                                                                ***
+***   You should install the full root fs or the full root dev     ***
+***   rootfs for a fully functional system.                        ***
+***                                                                ***
+***   Copy one of the following images to /tmp on the initramfs    ***
+***   and then specify that file as an argument to bfinst as       ***
+***   shown below.                                                 ***
+***                                                                ***
+***     core-image-full-BlueField-<version>.tar.xz                 ***
+***     core-image-full-dev-BlueField-<version>.tar.xz             ***
+***                                                                ***
+***   /opt/mlnx/scripts/bfinst --fullfs /tmp/<core-image>          ***
+***                                                                ***
+**********************************************************************
+EOF
+fi

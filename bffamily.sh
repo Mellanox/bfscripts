@@ -1,0 +1,60 @@
+#!/bin/sh
+
+# Copyright (c) 2018, Mellanox Technologies
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# The views and conclusions contained in the software and documentation are those
+# of the authors and should not be interpreted as representing official policies,
+# either expressed or implied, of the FreeBSD Project.
+
+# map product family names to an appropriate regular expressions
+declare -A PRODUCT_FAMILY_MAP=(
+    ["Bluewhale"]="MBE(11|12)0(0|1)[A-F]-(BC|BN)[0-9]"
+    ["SmartNIC/Bekka"]="MBF1(L|M)332A-(AF|AE|AS|AT)(NAT|CAT)"
+    ["Lamina SmartNIC 100G"]="MBF1L516A-(ES|CS)(NAT|CAT)"
+    ["Tresnis"]="MBF1L516B-(ES|CS)(NAT|CAT)"
+    ["Sella BF1600"]="MBF1M6[A-F0-9]6A-(CS|CE)(NAT|CAT|NAN)"
+    ["Sella-SmartNIC/Follera"]="MBF1L666A-ES(CAT|NAT)"
+    ["Denarious"]="MBF1M216A-CSNAT_C16"
+    ["Poondion"]="MBF1M706A-CSNAT_C15"
+    ["Poondion BF1700"]="MBF1M716A-CSNAT"
+)
+
+BUS_NUMBER=$(lspci | grep -E "Mellanox.+MT416842\s+BlueField.+ConnectX-5" | grep -m 1 -oE "[0-9]{2}:[0-9]{2}.[0-9]")
+
+PART_NUMBER=$(lspci -s "$BUS_NUMBER" -vv | grep PN)
+
+for family_name in "${!PRODUCT_FAMILY_MAP[@]}"
+do
+    PN=$(echo "$PART_NUMBER" | grep -oE "${PRODUCT_FAMILY_MAP[$family_name]}" 2>/dev/null)
+
+    if [ ! -z "$PN" ]
+    then
+        echo "$family_name"
+        exit 0
+    fi
+done
+
+echo "Unknown Product Family"
+
+exit 1
