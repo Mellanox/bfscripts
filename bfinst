@@ -103,52 +103,9 @@ update_boot()
 
     # Clean up actual boot entries.
     /opt/mlnx/scripts/bfbootmgr uninstall
-}
 
-# This function installs grub and sets it as the default boot option
-install_grub()
-{
-    efivars=/sys/firmware/efi/efivars
-    efidir=/mnt/boot
-    bootdir=/mnt/boot
-    localedir=/mnt/usr/share/locale
-    grubcfg=/mnt/boot/grub/grub.cfg
-
-    mount /dev/mmcblk0p2 /mnt
-    mount /dev/mmcblk0p1 /mnt/boot
-
-    test "$(ls -A $efivars)" || mount -t efivarfs none $efivars
-
-    mkdir -p $localedir
-    grub-install /dev/mmcblk0p1 --locale-directory=$localedir --efi-directory=$efidir --boot-directory=$bootdir
-
-    touch $grubcfg
-    echo \
-"#
-# /boot/grub/grub.cfg
-#
-
-# See the official grub documentation for more information.
-
-# Set menu colors
-set menu_color_normal=white/blue
-set menu_color_highlight=light-blue/white
-
-# Set menu display time
-set timeout=10
-
-# Set the default boot entry (first is 0)
-set default=0
-
-# Boot entries:
-# Yocto
-menuentry "Yocto from eMMC" {
-        linux (hd0,gpt1)/Image $bootarg
-}
-" > $grubcfg
-
-    umount /mnt/boot
-    umount /mnt
+    # Finally, install the boot entry.
+    /opt/mlnx/scripts/bfbootmgr install "$distro" "$kimage" "$bootarg"
 }
 
 if [ -n "${full_root}" ] && [ $# -eq 1 ]; then
@@ -187,8 +144,6 @@ if [ -n "${mini_root}" ]; then
     mkdir -p dev mnt sys tmp proc run
     cd /
     umount /mnt
-
-    install_grub
 
 cat <<EOF
 
@@ -235,8 +190,7 @@ fi
 if [ -n "${full_root}" ]; then
     mount /dev/mmcblk0p2 /mnt
     echo "Installing root file system.  This will take a few minutes."
-    # busybox version of tar requires EXTRACT_UNSAFE_SYMLINKS?
-    EXTRACT_UNSAFE_SYMLINKS=1 tar Jxf "$fspath" -C /mnt
+    tar Jxf "$fspath" -C /mnt
     sync
 
     mkdir -p /tmp/bootpart
@@ -245,8 +199,6 @@ if [ -n "${full_root}" ]; then
 
     umount /tmp/bootpart
     umount /mnt
-
-    install_grub
 fi
 
 if [ -z $full_root ] && [ -z $mini_root ]; then
