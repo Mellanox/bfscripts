@@ -11,7 +11,7 @@ usage ()
     echo "syntax: build-bfb [--bfb INPUT_BFBFILE] [--kernel IMAGE] \\"
     echo "  [--root ROOTPATH] [--bootarg BOOTARG] [--bootdesc BOOTDESC] \\"
     echo "  [--initramfs INITRAMFS] [--uart 0|1|rshim|all] [--sys SYSTEM] \\"
-    echo "  [--spi-drv DRIVER --spi-img FIRMWARE] [--no-gpt] [-i] \\"
+    echo "  [--mmc-cap CAPSULE --spi-img FIRMWARE] [--no-gpt] [-i] \\"
     echo "  rshim|mmc0|nvme0 OUTPUT"
 }
 
@@ -25,11 +25,11 @@ kernelargs=
 root=
 uart=
 sys=
-spi_drv=
+mmc_cap=
 spi_img=
 
 options=`getopt -n build-bfb -o ivh \
-        -l help,kernel:,initramfs:,bfb:,verbose,no-gpt,bootdesc:,bootarg:,sys:,uart:,root:,spi-drv:,spi-img: -- "$@"`
+        -l help,kernel:,initramfs:,bfb:,verbose,no-gpt,bootdesc:,bootarg:,sys:,uart:,root:,mmc-cap:,spi-img: -- "$@"`
 eval set -- $options
 while [ "$1" != -- ]; do
     case $1 in
@@ -45,7 +45,7 @@ while [ "$1" != -- ]; do
         --uart) shift; uart="$1" ;;
         --sys) shift; sys="$1" ;;
         --root) shift; root=$1 ;;
-        --spi-drv) shift; spi_drv=$1 ;;
+        --mmc-cap) shift; mmc_cap=$1 ;;
         --spi-img) shift; spi_img=$1 ;;
     esac
     shift
@@ -134,16 +134,12 @@ else
     kernelargs="$kernelargs root=$root rootwait"
 fi
 
-if [ -n "$spi_drv" ]; then
-    extra_mkbootargs="$extra_mkbootargs --spi-driver $spi_drv"
-    if [ -n "$spi_img" ]; then
-        extra_mkbootargs="$extra_mkbootargs --spi-image $spi_img"
-    else
-        echo "build-bfb --spi-drv: must specify --spi-img" >&2
-        exit 1
-    fi
-elif [ -n "$spi_img" ]; then
-    echo "** Warning: build-bfb --spi-img ignored: must specify --spi-drv" 2>&1
+if [ -n "$mmc_cap" ]; then
+    extra_mkbootargs="$extra_mkbootargs --mmc-cap $mmc_cap"
+fi
+
+if [ -n "$spi_img" ]; then
+    extra_mkbootargs="$extra_mkbootargs --spi-img $spi_img"
 fi
 
 if [ -n "$gpt" ]; then

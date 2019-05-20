@@ -51,10 +51,10 @@ SCRIPTS_DIR="/opt/mlnx/scripts"
 if [ -d "$SCRIPTS_DIR" ]; then
 	cd "$TMP_DIR"
 	$SCRIPTS_DIR/mlx-mkbfb -x "$CURRENT_BFB"
-	echo Boot args: "$(cat dump-boot-args)"
-	echo Boot desc: "$(cat dump-boot-desc)"
-	echo Boot path: "$(cat dump-boot-path)"
-	echo Boot ACPI: "$(cat dump-boot-acpi)"
+	echo Boot args: "$(cat dump-boot-args-v0)"
+	echo Boot desc: "$(cat dump-boot-desc-v0)"
+	echo Boot path: "$(cat dump-boot-path-v0)"
+	echo Boot ACPI: "$(cat dump-boot-acpi-v0)"
 fi
 
 # Print BlueField version number if Yocto version file is present

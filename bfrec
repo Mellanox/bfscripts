@@ -27,13 +27,226 @@
 # of the authors and should not be interpreted as representing official policies,
 # either expressed or implied, of the FreeBSD Project.
 
-bfb_location=/lib/firmware/mellanox/default.bfb
+set -e
 
-# If default.bfb doesn't exist, we're not on install.bfb, so
-# fall back to the hardware bfb contained in mlxbf-bootimages.
-if [ ! -f "$bfb_location" ]; then
-    bfb_location=/lib/firmware/mellanox/boot/default.bfb
+# To debug set run=echo
+run=
+
+PROGNAME=$(basename "$0")
+
+usage()
+{
+    cat <<EOF
+Usage: $PROGNAME    [--help]
+                    [--default [FILE DEVICE]]
+                    [--capsule [FILE [EFI_DIR EFI_PARTITION]]]
+EOF
+    exit 0
+}
+
+default_mode=
+capsule_mode=
+
+PARSED_OPTIONS=`getopt -n "$PROGNAME" -o h \
+                    -l help,default,capsule -- "$@"`
+eval set -- "$PARSED_OPTIONS"
+
+while true
+do
+  case $1 in
+      -h | --help)
+          usage
+          ;;
+      -d | --default)
+          default_mode=1
+          shift
+          ;;
+      -c | --capsule)
+          capsule_mode=1
+          shift
+          ;;
+      --)
+          shift
+          break
+          ;;
+  esac
+done
+
+if [ -n "$default_mode" ] && [ -n "$capsule_mode" ]; then
+    cat <<EOF
+ERROR: Use either options '--default' or '--capsule'
+EOF
+    exit 1
 fi
 
-mlxbf-bootctl -s -d /dev/mmcblk0 -b $bfb_location
-mlxbf-bootctl -s -d /dev/mmcblk0 -b $bfb_location
+# Parse command arguments
+if [ -n "$default_mode" ]; then
+    bfb_file=
+    bfb_device=
+    if [ $# -eq 2 ]; then
+        bfb_file=$1
+        bfb_device=$2
+    elif [ $# -lt 2 ]; then
+        echo "ERROR: Too few arguments with option '--default'"
+        exit 1
+    elif [ $# -gt 2 ]; then
+        echo "ERROR: Too many arguments with option '--default'"
+        exit 1
+    fi
+elif [ -n "$capsule_mode" ]; then
+    capsule_file=
+    efi_path=
+    efi_part=
+    if [ $# -ge 1 ]; then
+        capsule_file=$1
+    fi
+    if [ $# -eq 2 ]; then
+        echo "ERROR: Too few arguments with option '--capsule'"
+        exit 1
+    fi
+    if [ $# -ge 3 ]; then
+        efi_path=$2
+        efi_part=$3
+    fi
+    if [ $# -ge 4 ]; then
+        echo "ERROR: Too many arguments with option '--capsule'"
+        exit 1
+    fi
+fi
+
+bfb_location=/lib/firmware/mellanox/boot/default.bfb
+
+if [ -n "$capsule_mode" ]; then
+    # UEFI will read the capsule image from the EFI System Partition.
+    # If the ESP path is not defined, then check whether an EFI System
+    # partition is present. If not, then the UEFI capsule update is not
+    # supported;
+
+    if [[ ! $(fdisk -l | grep "EFI System") ]]; then
+        echo "ERROR: cannot find EFI System Partition"
+        exit 1
+    fi
+
+    if [ -z "$efi_path" ]; then
+        # We expect a single EFI System partition formatted as FAT
+        count=$(lsblk -ifl | grep -i fat | cut -f1 -d' ' | wc -l)
+        if [ "$count" -ne 1 ]; then
+            echo "ERROR: cannot handle multiple FAT partitions"
+            exit 1
+        fi
+        block=$(lsblk -ifl | grep -i fat | cut -f1 -d' ')
+        efi_path=$(mount | grep $block | cut -f3 -d' ')
+        if [ -z "$efi_path" ]; then
+           echo "ERROR: EFI System Partition is not mounted"
+           exit 1
+        fi
+
+        # Retrieve the associated device partition
+        efi_part=$(mount | grep $efi_path | cut -f 1 -d' ')
+
+    elif [ ! -d "$efi_path" ]; then
+        echo "ERROR: $efi_path is not a directory"
+        exit 1
+    fi
+
+    if [ ! -b "$efi_part" ] || [ ! "$(mount | grep $efi_part)" ]; then
+        echo "ERROR: $efi_part is either invalid or umounted"
+        exit 1
+    fi
+
+    # set firmware updater variables
+    updater_efi=FirmwareUpdate.efi
+    updater_desc="FirmwareUpdater"
+    # set capsule variable
+    capsule=MmcBootCap
+
+    capsule_dir=/lib/firmware/mellanox/boot/capsule
+
+    if [ -z "$capsule_file" ]; then
+        capsule_file=$capsule_dir/$capsule
+    fi
+
+    if [ ! -f "$capsule_file" ]; then
+        echo "WARN: cannot find Capsule $capsule_file"
+        if [ -f "$bfb_location" ]; then
+            echo "WARN: use $bfb_location as Capsule file"
+            capsule_file=$bfb_location
+        else
+            echo "ERROR: no Capsule update file found"
+            exit 1
+        fi
+    fi
+
+    if [ ! -f "$capsule_dir/$updater_efi" ]; then
+        echo "ERROR: cannot find EFI updater application"
+        exit 1
+    fi
+
+    # Copy the capsule file into the EFI System Partition. Rename the file
+    # to match the expected pathname in UEFI, if needed.
+    $run cp $capsule_file $efi_path/MmcBootCap
+    $run cp $capsule_dir/$updater_efi $efi_path/$updater_efi
+    $run sync
+
+    efivars=/sys/firmware/efi/efivars
+    test "$(ls -A $efivars)" || mount -t efivarfs efivarfs $efivars
+
+    # The UEFI boot device selector must boot the EFI updater application
+    # to enter the system firmware update mode.
+
+    if [ "$(efibootmgr | grep $updater_desc)" ]; then
+        option=$(efibootmgr | grep $updater_desc | cut -f1 -d'*' | cut -c5-)
+        $run efibootmgr -b "$option" -B
+    fi
+
+    disk=$(echo $efi_part | cut -f 1 -d'p')
+    part=$(echo $efi_part | cut -f 2 -d'p')
+    $run efibootmgr -c -d $disk -p $part \
+        -L "$updater_desc" -l "$updater_efi" 2>&1 >/dev/null
+
+    cat <<EOF
+
+***********************************************************************
+***                                                                 ***
+***    Reboot the system to process the platform firmware updates   ***
+***                                                                 ***
+***********************************************************************
+
+EOF
+    ## Ask if the user wishes to reboot?
+    #read -p 'Reboot now (Y/n) [n]: ' answer
+    #if [ "$answer" == 'Y' ]; then
+    #    $run reboot
+    #fi
+    exit 0
+fi
+
+# If we reach here, then we are default mode. Use the mlxbf-bootcl tool
+# to update the boot partition.
+[[ ! $(which mlxbf-bootctl) ]] && \
+    (echo "mlxbf-bootctl program is not supported" ; exit 1)
+
+if [ -z "$bfb_file" ]; then
+    bfb_file=$bfb_location
+fi
+
+if [ ! -f "$bfb_file" ]; then
+    echo "ERROR: cannot find $bfb_file file"
+    exit 1
+fi
+
+if [ -n "$bfb_device" ]; then
+    if [ ! -b "$bfb_device" ]; then
+        echo "ERROR: $bfb_device is not a valid block device"
+        exit 1
+    fi
+else
+    bfb_device=/dev/mmcblk0
+fi
+
+$run /sbin/mlxbf-bootctl -s -d $bfb_device -b $bfb_file
+$run /sbin/mlxbf-bootctl -s -d $bfb_device -b $bfb_file
+$run sync
+
+exit 0
+
