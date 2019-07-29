@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 #
-# Copyright 2017 Mellanox Technologies. All Rights Reserved.
+# Copyright 2017-2019 Mellanox Technologies. All Rights Reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
@@ -76,8 +76,8 @@ image_list = (
     ("boot-args", "Arguments for boot image", 59),
     ("boot-timeout", "Boot menu timeout", 60),
     ("uefi-tests", "Specify what UEFI tests to run", 61),
-    ("spi-driver", "SPI flash driver", 30),
-    ("spi-image", "SPI flash image", 31),
+    ("mmc-cap", "Capsule to be used to update eMMC boot partition", 30),
+    ("spi-img", "HCA firmware image to be used to recover the SPI FLash", 31),
     ("image", "Boot image", 62),
     ("initramfs", "In-memory filesystem", 63),
 )
@@ -91,6 +91,11 @@ rev_image_table = dict([(z, (x, y)) for (x, y, z) in image_list])
 # Did we see the -v option?
 verbose = False
 
+# Maximum allowed image version number (inclusive)
+MAX_VER = 1
+
+MAJOR_VER = 1
+MINOR_VER = 2
 
 #
 # We pad images out to an even multiple of 8 bytes.
@@ -131,13 +136,14 @@ class BadHdr(Exception):
 class ImageHdr:
     """Represent a BlueField boot stream image header."""
 
-    magic = 0x13026642  # Magic number, "Bf^B^S"
-    default_major = 1   # Major version number
-    default_minor = 1   # Minor version number
-    length = 24         # Header length; must be multiple of 8
+    magic = 0x13026642          # Magic number, "Bf^B^S"
+    default_major = MAJOR_VER   # Major version number
+    default_minor = MINOR_VER   # Minor version number
+    length = 24                 # Header length; must be multiple of 8
 
     def __init__(self, infile=None, major=default_major, minor=default_minor,
-                 image_id=0, image_len=0, image_crc=0, following_images=0):
+                 image_id=0, image_len=0, image_crc=0, following_images=0,
+                 next_img_ver=0, cur_img_ver=0):
 
         if infile:
             self.__set_from_file(infile)
@@ -145,6 +151,8 @@ class ImageHdr:
             self.major = major
             self.minor = minor
             self.image_id = image_id
+            self.next_img_ver = next_img_ver
+            self.cur_img_ver = cur_img_ver
             self.image_len = image_len
             self.image_crc = image_crc
             self.following_images = following_images
@@ -171,6 +179,14 @@ class ImageHdr:
         """
         return self.image_len
 
+    def get_image_ver(self):
+        """Return the image version of the current image."""
+        return self.cur_img_ver
+
+    def set_next_image_ver(self, version):
+        """Set the image version of the next image following this image"""
+        self.next_img_ver = version
+
     def get_image_crc(self):
         """
         Return the image's CRC.  Note that this covers both the bytes of
@@ -192,6 +208,8 @@ class ImageHdr:
         w0 = (((self.magic & 0xFFFFFFFF) << 0) |
               ((self.major & 0xF) << 32) |
               ((self.minor & 0xF) << 36) |
+              ((self.next_img_ver & 0xF) << 44) |
+              ((self.cur_img_ver & 0xF) << 48) |
               (((self.length / 8) & 0xF) << 52) |
               ((self.image_id & 0xFF) << 56))
 
@@ -234,6 +252,14 @@ class ImageHdr:
         self.image_crc = (w1 >> 32) & 0xFFFFFFFF
         self.following_images = w2
 
+        # The next/cur image version fields were only added in minor 2
+        if self.minor <= 2:
+            self.next_img_ver = (w0 >> 44) & 0xF
+            self.cur_img_ver = (w0 >> 48) & 0xF
+        else:
+            self.next_img_ver = 0
+            self.cur_img_ver = 0
+
         if magic != self.magic:
             raise BadHdr("Bad ImageHdr magic number 0x%x" % magic)
 
@@ -244,7 +270,7 @@ class ImageHdr:
         if self.major != self.default_major:
             raise BadHdr("Bad ImageHdr major version %d" % self.major)
 
-        if self.minor != self.default_minor:
+        if self.minor > self.default_minor:
             raise BadHdr("Bad ImageHdr minor version %d" % self.major)
 
         if length != self.length / 8:
@@ -252,11 +278,15 @@ class ImageHdr:
 
     def dump(self, outfile=sys.stdout):
         """Dump out all internal state."""
-        print >> outfile, "Ver: %d.%d Len: %d ID: %d " \
-                          "ImLen: %d ImCRC: 0x%x FolIm: 0x%lx" % (
-                            self.major, self.minor, self.length,
-                            self.image_id, self.image_len,
-                            self.image_crc, self.following_images)
+        outtext = "Ver: %d.%d Len: %d ID: %d " \
+                  "ImLen: %d ImCRC: 0x%x FolIm: 0x%lx" % (
+                    self.major, self.minor, self.length,
+                    self.image_id, self.image_len,
+                    self.image_crc, self.following_images)
+        if self.minor >= 2:
+            outtext += " NxImVr: %d ImVr: %d" % (
+                         self.next_img_ver, self.cur_img_ver)
+        print >> outfile, outtext
 
 
 class Image:
@@ -274,7 +304,9 @@ class Image:
           the entire file is consumed; a header will be constructed which
           describes the data we read.  Mutually exclusive with instream.
         idstr: String ID (first column of image_list) for image.  Required,
-          and only useful, with infile.
+          and only useful, with infile. Can be suffixed with '-vN' to also
+          indicate image version number.
+
         """
 
         if instream:
@@ -297,6 +329,14 @@ class Image:
     def get_image_id(self):
         """Return the numeric image ID for this image."""
         return self.header.get_image_id()
+
+    def get_image_ver(self):
+        """Return the current image ID for this image."""
+        return self.header.get_image_ver()
+
+    def set_next_image_ver(self, next_img_ver):
+        """Set the image version of the next image following this image"""
+        self.header.set_next_image_ver(next_img_ver)
 
     def get_image_length(self):
         """Return the image's length in bytes."""
@@ -353,7 +393,8 @@ class Image:
         which describes that image data.
 
         stream: file name, or string preceded by "=".
-        idstr: string ID of image.
+        idstr: string ID of image. Can be suffixed with '-vN' to also indicate
+          image version number.
         """
 
         if infile.startswith("="):
@@ -367,15 +408,27 @@ class Image:
         crc = binascii.crc32("\0" * num_padding_bytes(length), crc)
         crc &= 0xFFFFFFFF
 
+        # Check if idstr is suffixed with '-vN', while NOT assuming that
+        # image names can't contain '-v' in its name.
+        img_ver = 0
+
+        if '-' in idstr:
+            (img, ver) = idstr.rsplit('-', 1)
+            if len(ver) > 1 and ver[0] == 'v' and ver[1:].isdigit():
+                if img in image_table:
+                    idstr = img
+                    img_ver = int(ver[1:])
+
         self.header = ImageHdr(image_id=image_table[idstr][1],
-                               image_len=length, image_crc=crc)
+                               image_len=length, image_crc=crc,
+                               cur_img_ver=img_ver)
 
 
-def make_stream(infn, outfn, image_tuples, expert):
+def make_stream(infnt, outfn, image_tuples, expert):
     """
     Write a boot stream to an output file.
 
-    infn: input file name.
+    infnt: tuple of input file names, files with bigger index takes priority
     outfn: output file name.
     image_tuples: an iterable containing tuples, each of which contains the
       string image identifier (the first column of image_list) and the filename
@@ -392,14 +445,19 @@ def make_stream(infn, outfn, image_tuples, expert):
     # If there's an input file, open it, and read in its contents.
     #
     infile_images = {}
-    if infn:
+    for infn in infnt:
         infile = open(infn, "rb")
         while True:
             try:
                 img = Image(instream=infile)
             except NoHdr:
                 break
-            infile_images[rev_image_table[img.get_image_id()][0]] = img
+
+            id = rev_image_table[img.get_image_id()][0]
+            if id not in infile_images:
+                infile_images[id] = {}
+
+            infile_images[id][img.get_image_ver()] = img
             fim_map |= 1 << img.get_image_id()
         infile.close()
 
@@ -408,9 +466,22 @@ def make_stream(infn, outfn, image_tuples, expert):
     # their contents.
     #
     cmdline_images = {}
-    for (id, fn) in image_tuples:
-        img = Image(infile=fn, idstr=id)
-        cmdline_images[id] = img
+    # The idver from the command line might have the -vN suffix, so we need
+    # to generate one without the suffix to be used for expert mode
+    cmdline_image_order = []
+    for (idver, fn) in image_tuples:
+
+        img = Image(infile=fn, idstr=idver)
+        id = rev_image_table[img.get_image_id()][0]
+
+        if id not in cmdline_images:
+            cmdline_images[id] = {}
+
+        cmdline_images[id][img.get_image_ver()] = img
+
+        if id not in cmdline_image_order:
+            cmdline_image_order.append(id)
+
         fim_map |= 1 << img.get_image_id()
 
     #
@@ -418,7 +489,7 @@ def make_stream(infn, outfn, image_tuples, expert):
     # line, but otherwise, we use the order they're found in image_list.
     #
     if expert:
-        image_order = [x[0] for x in image_tuples]
+        image_order = cmdline_image_order
     else:
         image_order = [x[0] for x in image_list]
 
@@ -428,16 +499,40 @@ def make_stream(infn, outfn, image_tuples, expert):
     # Emit each image in order, preferring the version from the command line.
     #
     for i in image_order:
+
+        images = {}
+
+        # Note the order here will let the images from the cmdline override
+        # images of the same version read from the file.
+        if i in infile_images:
+            images.update(infile_images[i])
+
         if i in cmdline_images:
-            img = cmdline_images[i]
-        elif i in infile_images:
-            img = infile_images[i]
-        else:
+            images.update(cmdline_images[i])
+
+        if len(images) == 0:
             continue
 
-        fim_map &= ~(1 << img.get_image_id())
-        img.set_following_images(fim_map)
-        img.write(outfile)
+        # Version order is strictly enforced here, even in expert mode.
+        images = [images[x] for x in sorted(images.keys())]
+
+        while len(images) > 0:
+            img = images.pop(0)
+
+            if len(images) == 0:
+                fim_map &= ~(1 << img.get_image_id())
+                img.set_next_image_ver(0)
+            else:
+                img.set_next_image_ver(images[0].get_image_ver())
+
+            img.set_following_images(fim_map)
+
+            # The image might be loaded from a previous bfb of a lower version
+            # so make sure the generated bfb file have the current version.
+            img.header.minor = MAJOR_VER
+            img.header.minor = MINOR_VER
+
+            img.write(outfile)
 
     outfile.close()
 
@@ -468,6 +563,10 @@ def dump_stream(infn, do_dump, do_extract, prefix):
             fn = "image_id_%d" % image_id
             desc = "Unknown image type, ID %d" % image_id
 
+        if img.header.minor >= 2:
+            fn += "-v%d" % img.get_image_ver()
+            desc += " (version %d)" % img.get_image_ver()
+
         if do_dump:
             if verbose:
                 img.dump()
@@ -492,7 +591,7 @@ def main(argv):
     # Set up our option parser.
     #
     parser = OptionParser(
-            usage="\n  %prog [ options ] [ INFILE ] OUTFILE\n"
+            usage="\n  %prog [ options ] [ INFILE ] [ INFILE2 ] OUTFILE\n"
                   "  %prog -[dx] [ options ] INFILE\n"
                   "  %prog [ -h | --help ]",
             description="%prog creates or dumps a BlueField boot stream.")
@@ -522,12 +621,21 @@ def main(argv):
                       'image specification may either be the name of a file '
                       'which contains the image data (e.g., --image=vmlinux), '
                       'or a literal string prefixed with an equals sign '
-                      '(e.g., --boot-args="=debug isolcpus=10").')
+                      '(e.g., --boot-args="=debug isolcpus=10").'
+                      'An optional "-vN" can be added to the image name to '
+                      'specify which version the image is, default to 0.')
     for fn in image_table:
         iog.add_option(
                 "--" + fn, type="string",
                 action="callback", callback=parse_image_opt, metavar="IMAGE",
                 help="take data for " + image_table[fn][0] + " from IMAGE")
+
+        # Also add the options with the "-vN" prefix in the image option
+        for v in range(MAX_VER + 1):
+            iog.add_option(
+                    "--" + fn + "-v%d" % v, type="string", action="callback",
+                    callback=parse_image_opt, metavar="IMAGE")
+
     parser.add_option_group(iog)
 
     #
@@ -542,8 +650,8 @@ def main(argv):
     if (opt.d or opt.x) and len(args) > 1:
         parser.error("no output file allowed with -d/-x")
 
-    if len(args) > 2:
-        parser.error("only one input and one output file allowed")
+    if len(args) > 3:
+        parser.error("only two input and one output file allowed")
 
     if opt.d or opt.x:
         if opt.e:
@@ -555,14 +663,20 @@ def main(argv):
         if len(args) <= 0:
             parser.error("must specify a file")
         elif len(args) == 1:
-            infn = None
+            infn = ()
             outfn = args[0]
             if not opt.images:
                 parser.error("must specify input .bfb or at least one image "
                              "option with output file")
-        else:
-            infn = args[0]
+        elif len(args) == 2:
+            infn = (args[0],)
             outfn = args[1]
+            if opt.e:
+                parser.error("input file not permitted with -e")
+
+        else:
+            infn = (args[0], args[1])
+            outfn = args[2]
             if opt.e:
                 parser.error("input file not permitted with -e")
 

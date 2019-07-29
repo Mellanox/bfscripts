@@ -27,6 +27,8 @@
 # of the authors and should not be interpreted as representing official policies,
 # either expressed or implied, of the FreeBSD Project.
 
+# Arrays are bash specific so this script requires bash.
+
 # map product family names to an appropriate regular expressions
 declare -A PRODUCT_FAMILY_MAP=(
     ["Bluewhale"]="MBE(11|12)0(0|1)[A-F]-(BC|BN)[0-9]"

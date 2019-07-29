@@ -30,12 +30,13 @@
 usage()
 {
   cat <<EOF
-Usage: $0 [--help] [--unloadmods] [--minifs] [--fullfs path]
+Usage: $0 [--help] [--unloadmods] [--minifs] [--fullfs path] [--fmtpersist]
+    [--persistcfg] [--skip-boot-update]
 EOF
 }
 
 PARSED_OPTIONS=$(getopt -n "$0" -o h \
-    --long "help unloadmods minifs fullfs" -- "$@")
+    --long "help unloadmods minifs fullfs fmtpersist persistcfg skip-boot-update" -- "$@")
 
 eval set -- "$PARSED_OPTIONS"
 
@@ -56,6 +57,18 @@ do
           ;;
       --fullfs)
           full_root=1
+          shift
+          ;;
+      --fmtpersist)
+          format_persist=1
+          shift
+          ;;
+      --persistcfg)
+          persist_config=1
+          shift
+          ;;
+      --skip-boot-update)
+          skip_boot_update=1
           shift
           ;;
       --)
@@ -85,25 +98,49 @@ EOF
     exit 1
 fi
 
-# This function updates boot options. This cleans up the actual boot
-# options and installs a new boot option.
-update_boot()
-{
-    # First, set boot parameters: set the distribution name and the
-    # relative path to the kernel image in the boot partition, i.e.,
-    # should be located at /dev/mmcblk0p1/ (must be consistent with
-    # disk partitioning).
-    distro="Yocto"
-    kimage="\Image"
+# Check to make sure the user really wants to format their persistent
+# partition
 
-    # Then, set boot arguments: Read current 'console' and 'earlycon'
-    # parameters, and append the root filesystem parameters.
-    bootarg="$(cat /proc/cmdline | sed 's/initrd=initramfs//')"
-    bootarg="$(echo "$bootarg" root=/dev/mmcblk0p2 rootwait)"
+if [ -n "${format_persist}" ]; then
+    cat <<EOF
 
-    # Clean up actual boot entries.
-    /opt/mlnx/scripts/bfbootmgr uninstall
-}
+**********************************************************************
+***                                                                ***
+***  You are about to format your persistent partition! Are you    ***
+***  sure you want to delete all data on your /data partition?     ***
+***                                                                ***
+**********************************************************************
+
+EOF
+    # Keep asking until we get a straight answer
+    # valid answers are y, yes, n, no, and abort
+    while true; do
+        read -p 'format /data? (y/n/abort) ' confirm
+
+        case $confirm in
+            [yY]|[yY][eE][sS])
+                break
+                ;;
+            [nN]|[nN][oO])
+                echo "Continuing install without formatting /data."
+                format_persist=
+                break
+                ;;
+            [aA]|abort)
+                echo "Abort."
+                exit 0
+                ;;
+            *)
+                echo "Invalid choice."
+                ;;
+        esac
+    done
+fi
+
+#set boot arguments: Read current 'console' and 'earlycon'
+# parameters, and append the root filesystem parameters.
+bootarg="$(cat /proc/cmdline | sed 's/initrd=initramfs//')"
+bootarg="$(echo "$bootarg" root=/dev/mmcblk0p2 rootwait)"
 
 # This function installs grub and sets it as the default boot option
 install_grub()
@@ -161,19 +198,32 @@ elif [ $# -ne 0 ]; then
     exit 1
 fi
 
-# Flash the two boot partitions.
-mlxbf-bootctl -s -d /dev/mmcblk0 -b /lib/firmware/mellanox/default.bfb
-mlxbf-bootctl -s -d /dev/mmcblk0 -b /lib/firmware/mellanox/default.bfb
+if [ -n "${format_persist}" ]; then
+    bfpart_args="-o"
+fi
 
 # Create the yocto partitions.
-/opt/mlnx/scripts/bfpart
+partresult="$(/opt/mlnx/scripts/bfpart $bfpart_args)"
+persist_status=$(echo "$partresult" | grep PERSIST: | awk '{print $2}')
 
-# Update the firmware and boot the current kernel image.
-update_boot
+# Cleans up the actual boot options.
+/opt/mlnx/scripts/bfbootmgr --cleanall
 
 mkdosfs /dev/mmcblk0p1
 
 yes | mkfs.ext4 /dev/mmcblk0p2
+
+if [ -n "${format_persist}" ] || [ "$persist_status" = "create" ]; then
+    yes | mkfs.ext4 /dev/mmcblk0p8
+    mount /dev/mmcblk0p8 /mnt
+    mkdir /mnt/etc
+    mkdir /mnt/.etc.work
+
+    umount /mnt
+    echo Created persistent data partition.
+else
+    echo Using existing persistent partition.
+fi
 
 if [ -n "${mini_root}" ]; then
     # Copy the boot Image.
@@ -184,7 +234,8 @@ if [ -n "${mini_root}" ]; then
     cd /
     cp -ar bin boot etc home init lib lib64 media opt root sbin usr var /mnt
     cd /mnt
-    mkdir -p dev mnt sys tmp proc run
+    mkdir -p dev mnt sys tmp proc run data
+
     cd /
     umount /mnt
 
@@ -228,24 +279,62 @@ sync
 
 if [ -n "${unload_modules}" ]; then
     # Unload various kernel modules before continuing.
-    rmmod i2c_mlx gpio_mlxbf nfit libnvdimm mlxbf_livefish mlx_bootctl
-    rmmod mlx5_ib ib_core mlx5_core mlxfw mlx_compat
+    if /opt/mlnx/scripts/bffamily | grep Sella; then
+        rmmod mlx_cpld
+    fi
+
+    rmmod ipmb_dev_int i2c_mlx gpio_mlxbf nfit libnvdimm
+    rmmod mlxbf_livefish mlx_bootctl mlx5_ib ib_core mlx5_core mlxfw
+    rmmod mlx_compat
+fi
+
+tar_version=`ls -l /bin/tar`
+
+if [ "${tar_version#*busybox}" != "$tar_version" ]; then
+    tar_options=""
+else
+    # The non-busybox version of tar will complain about timestamps
+    # in the future because the clock isn't set during the installation
+    # process.
+    tar_options="--warning=no-timestamp"
 fi
 
 if [ -n "${full_root}" ]; then
     mount /dev/mmcblk0p2 /mnt
     echo "Installing root file system.  This will take a few minutes."
     # busybox version of tar requires EXTRACT_UNSAFE_SYMLINKS?
-    EXTRACT_UNSAFE_SYMLINKS=1 tar Jxf "$fspath" -C /mnt
+    XZ_OPT="--threads=0 -9 --verbose" EXTRACT_UNSAFE_SYMLINKS=1 tar Jxf "$fspath" -C /mnt "$tar_options"
     sync
 
     mkdir -p /tmp/bootpart
     mount /dev/mmcblk0p1 /tmp/bootpart
     rsync -a -L /mnt/boot/ /tmp/bootpart
 
+    # Create a read-only etc image for persistent config feature
+    mkdir -p /tmp/etcimg
+    touch /mnt/etc.img
+    truncate --size=25M /mnt/etc.img
+    mkfs.ext4 /mnt/etc.img
+    mount /mnt/etc.img /tmp/etcimg
+    rsync -a /mnt/etc/ /tmp/etcimg
+    mkdir /mnt/etc.lower
+
+    umount /tmp/etcimg
     umount /tmp/bootpart
     umount /mnt
 
+    # If the user specified turning on persist cfg by default, do so,
+    # otherwise leave it to whatever the user had it on. Note that
+    # this will activate the feature whether we're using the old persistent
+    # data or a newly formatted partition.
+    if [ -n "${persist_config}" ]; then
+        mount /dev/mmcblk0p8 /mnt
+        touch /mnt/persistconfig
+        umount /mnt
+    fi
+
+    # Add preinit to kernel args
+    bootarg="$(echo "$bootarg" init=/sbin/preinit)"
     install_grub
 fi
 
@@ -288,3 +377,19 @@ cat <<EOF
 **********************************************************************
 EOF
 fi
+
+if [ -z "${skip_boot_update}" ]; then
+    # Update eMMC boot partitions. Update via either capsule
+    # path or default path (i.e., mlxbf-bootctl). This command
+    # MUST be executed after 'update_boot' and 'install_grub',
+    # otherwise the newly created boot option would be either
+    # cleaned up or unset from default option.
+    /opt/mlnx/scripts/bfrec
+fi
+
+# Execute miscellaneous tasks. These are vendor/customer specific
+# operations that are required during installation procedure.
+# Customers are invited to provide their own configuration and list
+# it in 'misc_task_hooks'.
+[[ -e /opt/mlnx/scripts/bfmisc ]] && \
+    (. /opt/mlnx/scripts/bfmisc; misc_task_hooks)

@@ -1,21 +1,27 @@
 Summary: Install BlueField scripts
 Name: bfscripts
-Version: 1.1
-Release: r0
+Version: 2.1.0
+Release: 10924
 License: BSD
 Group: base
 Packager: Poky <poky@yoctoproject.org>
 BuildRequires: systemd-systemctl-native
+Requires: /bin/bash
 Requires: /bin/sh
 Requires: /usr/bin/env
+Requires: bash
 Requires: mlxbf-bootctl
 Requires: mlxbf-bootimages
+Requires(post): /bin/bash
 Requires(post): /bin/sh
 Requires(post): /usr/bin/env
+Requires(post): bash
 Requires(post): mlxbf-bootctl
 Requires(post): mlxbf-bootimages
+Requires(preun): /bin/bash
 Requires(preun): /bin/sh
 Requires(preun): /usr/bin/env
+Requires(preun): bash
 Requires(preun): mlxbf-bootctl
 Requires(preun): mlxbf-bootimages
 
@@ -67,24 +73,20 @@ fi
 
 %files
 %defattr(-,-,-,-)
-%dir "/lib"
-%dir "/opt"
-%dir "/lib/systemd"
-%dir "/lib/systemd/system"
-"/lib/systemd/system/bfvcheck.service"
-%dir "/opt/mellanox"
 "/opt/mlnx"
-%dir "/opt/mellanox/scripts"
-"/opt/mellanox/scripts/bfinst"
-"/opt/mellanox/scripts/bfrec"
-"/opt/mellanox/scripts/bfdracut"
-"/opt/mellanox/scripts/build-bfb"
-"/opt/mellanox/scripts/bfpart"
-"/opt/mellanox/scripts/bfbootmgr"
-"/opt/mellanox/scripts/mlx-mkbfb"
-"/opt/mellanox/scripts/bfvcheck"
-"/opt/mellanox/scripts/bfpxe"
-"/opt/mellanox/scripts/bffamily"
 "/opt/mellanox/scripts/bfver"
 "/opt/mellanox/scripts/bfcpu-freq"
+"/opt/mellanox/scripts/bfsbkeys"
+"/opt/mellanox/scripts/mlx-mkbfb"
+"/opt/mellanox/scripts/bfmisc"
+"/opt/mellanox/scripts/bfinst"
+"/opt/mellanox/scripts/build-bfb"
+"/opt/mellanox/scripts/bfpart"
+"/opt/mellanox/scripts/bfpxe"
+"/opt/mellanox/scripts/bfvcheck"
+"/opt/mellanox/scripts/bffamily"
+"/opt/mellanox/scripts/bfdracut"
+"/opt/mellanox/scripts/bfrec"
+"/opt/mellanox/scripts/bfbootmgr"
+"/lib/systemd/system/bfvcheck.service"
 
