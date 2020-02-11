@@ -87,7 +87,7 @@ PERSIST_PART=/dev/mmcblk0p8
 
 # Load bf.cfg if exists, which could re-define the EFI_PART & ROOT_PART.
 if [ -e /etc/bf.cfg ]; then
-  eval "$(bfcfg --part-info)"
+  eval "$(/opt/mlnx/scripts/bfcfg --part-info)"
 fi
 
 # If both full_root and mini_root are set to a non-empty string
@@ -153,9 +153,6 @@ fi
 # parameters, and append the root filesystem parameters.
 bootarg="$(cat /proc/cmdline | sed 's/initrd=initramfs//')"
 bootarg="$(echo "$bootarg" root=$ROOT_PART rootwait)"
-
-rescue_bootarg="$(cat /proc/cmdline | sed 's/initrd=initramfs//')"
-rescue_bootarg="$(echo "$bootarg" root=$ROOT_PART)"
 
 # Older versions of systemd-gpt-auto-generator can't parse
 # the eMMC boot partitions properly.  BlueField does not
@@ -332,7 +329,7 @@ if [ -n "${full_root}" ]; then
     bootfifo_rootfs_file=/tmp/rootfs.tar
     if [ "${fspath}" = "${bootfifo_rootfs_file}" ]; then
       ${ECHO} "boot: wait for decompression"
-      for i in {1..600}; do
+      for i in {1..300}; do
         [ -f "${bootfifo_rootfs_file}_done" ] && break
         sleep 1
       done
@@ -386,7 +383,7 @@ if [ -n "${full_root}" ]; then
 fi
 
 if [ -z $full_root ] && [ -z $mini_root ]; then
-    mount $EFI_PART /mnt; cp /boot/Image /mnt; cp /boot/core-image-rescue-initramfs-bluefield.cpio.xz /mnt; umount /mnt
+    mount $EFI_PART /mnt; cp /boot/Image /mnt; umount /mnt
 
 cat <<EOF
 
