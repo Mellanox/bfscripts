@@ -58,29 +58,11 @@ image_list = (
     ("bl2",       "Trusted Boot Firmware BL2 bin",         1),
     ("sys",       "Running system's part number or PSID",  29),
 
-    ("pseudo_spd_file", "File From Which Will Load Pseudo SPD Parameters", 32),
+    ("ddr_ini", "File From Which Will Load DDR (pseudo spd) Parameters", 32),
 
-    ("ddr4_pmu_train_imem", "UDIMM SNPS training image INSTRUCTIONS ", 33),
-    ("ddr4_pmu_train_dmem", "UDIMM SNPS training image DATA", 34),
-    ("ddr4_2d_pmu_train_imem", "UDIMM SNPS 2D training image INSTRUCTIONS", 35),
-    ("ddr4_2d_pmu_train_dmem", "UDIMM SNPS 2D training image DATA", 36),
-
-    ("ddr4_rdimm_pmu_train_imem", "RDIMM SNPS training image INSTRUCTIONS", 37),
-    ("ddr4_rdimm_pmu_train_dmem", "RDIMM SNPS training image DATA", 38),
-    ("ddr4_rdimm2d_pmu_train_imem", "RDIMM SNPS 2D training image INSTRUCTIONS", 39),
-    ("ddr4_rdimm2d_pmu_train_dmem", "RDIMM SNPS 2D training image DATA", 40),
-
-    ("ddr4_lrdimm_pmu_train_imem", "LRDIMM SNPS training image INSTRUCTIONS", 41),
-    ("ddr4_lrdimm_pmu_train_dmem", "LRDIMM SNPS training image DATA", 42),
-    ("ddr4_lrdimm2d_pmu_train_imem", "LRDIMM SNPS 2D training image INSTRUCTIONS", 43),
-    ("ddr4_lrdimm2d_pmu_train_dmem", "LRDIMM SNPS 2D training image DATA", 44),
-
-    ("ddr_ate_imem", "Analog Test Engine INSTRUCTIONS", 45),
-    ("ddr_ate_dmem", "Analog Test Engine DATA", 46),
-
-    ("ddr4_pie_image", "UDIMM Phy Initialization Engine", 47),
-    ("ddr4_rdimm_pie_image", "RDIMM Phy Initialization Engine", 48),
-    ("ddr4_lrdimm_pie_image", "LRDIMM Phy Initialization Engine", 49),
+    ("snps_images", "Combined SNPS Images for all DIMM types", 33),
+    ("ddr_ate_imem", "Analog Test Engine INSTRUCTIONS", 34),
+    ("ddr_ate_dmem", "Analog Test Engine DATA", 35),
 
     ("bl30-key-cert", "SCP Firmware BL3-0 key certificate", 8),
     ("bl30-cert", "SCP Firmware BL3-0 certificate", 12),
