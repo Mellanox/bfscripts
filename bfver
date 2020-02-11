@@ -46,17 +46,6 @@ echo BlueField ATF version: "$(strings "$CURRENT_BFB" | grep -m 1 "(\(release\|d
 # Find and print the UEFI of current bfb
 echo BlueField UEFI version: "$(strings -e l "$CURRENT_BFB" | grep "BlueField" | cut -d':' -f 2)"
 
-# Print boot parameters using mlx-mkbfb
-SCRIPTS_DIR="/opt/mlnx/scripts"
-if [ -d "$SCRIPTS_DIR" ]; then
-	cd "$TMP_DIR"
-	$SCRIPTS_DIR/mlx-mkbfb -x "$CURRENT_BFB"
-	echo Boot args: "$(cat dump-boot-args-v0)"
-	echo Boot desc: "$(cat dump-boot-desc-v0)"
-	echo Boot path: "$(cat dump-boot-path-v0)"
-	echo Boot ACPI: "$(cat dump-boot-acpi-v0)"
-fi
-
 # Print BlueField version number if Yocto version file is present
 if [ -e "/etc/bluefield_version" ]; then
 	echo BlueField Release Version: "$(cat /etc/bluefield_version)"

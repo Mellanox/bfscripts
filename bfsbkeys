@@ -1,6 +1,6 @@
-#!/bin/sh
+#!/bin/sh -e
 
-# Copyright (c) 2017, Mellanox Technologies
+# Copyright (c) 2019, Mellanox Technologies
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -27,66 +27,78 @@
 # of the authors and should not be interpreted as representing official policies,
 # either expressed or implied, of the FreeBSD Project.
 
-#
-# Read the core PLL register to calculate the core clock frequency
-#
-
 if [ ! -d /dev/mst ]; then
 	mst start
 fi
 
 BF1_PLATFORM_ID=0x00000211
 BF2_PLATFORM_ID=0x00000214
-
-mst_devs="/dev/mst/mt41682_pciconf0 /dev/mst/mt41686_pciconf0"
-
-for d in $mst_devs; do
-    if [ -e $d ]; then
-        mst_device=$d
-    fi
-done
-
-if [ -z "$mst_device" ]; then
-    if [ -e /dev/mst/bf-livefish ]; then
-        echo "Can not read core frequency in livefish mode"
-    else
-        echo "No BlueField MST device found"
-    fi
-    exit 1
+mst_device="/dev/mst/mt41682_pciconf0"
+if [ ! -c "$mst_device" ]; then
+	mst_device="/dev/mst/bf-livefish"
 fi
 
-bfversion=$(mcra $mst_device 0xf0014.0:16)
+# Read chip version info from the CRSPACE
+bfversion=$(mcra $mst_device 0xf0014)
 
 if [ $bfversion == $BF1_PLATFORM_ID ]; then
-
-	padfreq=156.25 # MHz
-
-	F=$(($(mcra $mst_device 0x1c0384.3:13)))
-	R=$(($(mcra $mst_device 0x1c0384.20:6)))
-	OD=$(($(mcra $mst_device 0x1c0384.16:4)))
-
-	# F= padfreq*(F+1)/((R+1)*(OD+1))
-	freq=$(echo "$F 1 + $padfreq * $R 1 + / $OD 1 + / p"  | dc)
-
-	echo "core freq = ${freq}MHz"
-
+	certversion=0
 elif [ $bfversion == $BF2_PLATFORM_ID ]; then
-
-	padfreq=200 # MHz
-
-	if [ $is_livefish == true ]; then
-		echo "core freq = ${padfreq}MHz"
-		exit
-	fi
-
-	F=$(($(mcra $mst_device 0xf0f90.0:26)))
-	R=$(($(mcra $mst_device 0xf0f90.26:6)))
-	OD=$(($(mcra $mst_device 0xf0f94.1:4)))
-
-	# F= padfreq*(F/16384)/(R+1)/(OD+1)
-	freq=$(echo "$F $padfreq * 16384 / $R 1 + / $OD 1 + / p"  | dc)
-
-	echo "core freq = ${freq}MHz"
+	certversion=1
 else
-	echo "Unknown platform, unable to get the cpu frequency"
+	echo "Unknown platform. Exiting.\n"
+	exit 1
 fi
+
+TMP_DIR=$(mktemp -d)
+TMP_FILE="dump"
+CURRENT_BFB=$TMP_DIR/"current.bfb"
+
+if [ -d "$TMP_DIR" ]; then
+	rm -rf "$TMP_DIR"
+fi
+
+# Create a temporary folder for the generated files
+mkdir "$TMP_DIR"
+
+# Identify current primary boot partition
+DEV_PATH=$(mlxbf-bootctl | grep "primary" | cut -d ' ' -f 2)
+
+# Retrieve default.bfb from the eMMC
+mlxbf-bootctl -r "$DEV_PATH" -b "$CURRENT_BFB"
+
+# Get bfb components using mlx-mkbfb
+SCRIPTS_DIR="/opt/mlnx/scripts"
+if [ -d "$SCRIPTS_DIR" ]; then
+	cd "$TMP_DIR"
+	$SCRIPTS_DIR/mlx-mkbfb -x "$CURRENT_BFB"
+
+	declare -A certs=(["dump-bl2-cert-v$certversion"]="BL2 Public Key"
+			["dump-bl31-key-cert-v$certversion"]="BL31 Public Key"
+			["dump-bl33-key-cert-v$certversion"]="BL33 Public Key"
+			["dump-trusted-key-cert-v$certversion"]="Trusted Key")
+
+	nocert=1
+	for i in "${!certs[@]}"
+	do
+		if [ ! -e $i ]; then
+			continue
+		fi
+
+		nocert=0
+		echo -e "\n${certs[$i]}:"
+		echo -e "\n\tModulus:"
+		openssl x509 -in $i -inform der -text > $TMP_FILE
+		sed -e '1,/Modulus:/d' -e '/Exponent:/,$d' $TMP_FILE
+		echo -e "\n\tExponent:"
+		exp=$(sed -n -e 's/^.*Exponent: //p' $TMP_FILE | cut -d ' ' -f 1)
+		echo -e "\t\t    $exp"
+	done
+
+	if [ $nocert == 1 ]; then
+		echo "No certificates found in boot image"
+	fi
+fi
+
+# Remove temporary directory
+rm -rf "$TMP_DIR"

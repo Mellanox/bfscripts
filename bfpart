@@ -36,7 +36,7 @@ usage ()
     echo "syntax: bfpart [-b MB] [-p MB] [-o]"
 }
 
-boot_size=350
+boot_size=100
 persistent_size=250
 persistent_uuid="CAFDC47B-3F21-4A78-81CC-F91944081165"
 
@@ -60,7 +60,7 @@ while getopts ":b:p:o" opt; do
 done
 
 start_reserved=2048    # sectors required for label before first partition
-end_reserved=34        # sectors required after last partition
+end_reserved=33        # sectors required after last partition
 
 disk_size=$(fdisk -l /dev/mmcblk0 | grep "Disk /dev/mmcblk0:" | awk '{print $5}')
 disk_size=$((disk_size / 1024 / 1024))
