@@ -137,25 +137,16 @@ EOF
     done
 fi
 
-# This function updates boot options. This cleans up the actual boot
-# options and installs a new boot option.
-update_boot()
-{
-    # First, set boot parameters: set the distribution name and the
-    # relative path to the kernel image in the boot partition, i.e.,
-    # should be located at /dev/mmcblk0p1/ (must be consistent with
-    # disk partitioning).
-    distro="Yocto"
-    kimage="\Image"
+#set boot arguments: Read current 'console' and 'earlycon'
+# parameters, and append the root filesystem parameters.
+bootarg="$(cat /proc/cmdline | sed 's/initrd=initramfs//')"
+bootarg="$(echo "$bootarg" root=/dev/mmcblk0p2 rootwait)"
 
-    # Then, set boot arguments: Read current 'console' and 'earlycon'
-    # parameters, and append the root filesystem parameters.
-    bootarg="$(cat /proc/cmdline | sed 's/initrd=initramfs//')"
-    bootarg="$(echo "$bootarg" root=/dev/mmcblk0p2 rootwait)"
-
-    # Clean up actual boot entries.
-    /opt/mlnx/scripts/bfbootmgr uninstall
-}
+# Older versions of systemd-gpt-auto-generator can't parse
+# the eMMC boot partitions properly.  BlueField does not
+# rely on this service so we disable it to prevent seeing
+# error messages in the log (which are harmless).
+bootarg="$(echo "$bootarg" rd.systemd.gpt_auto=0 systemd.gpt_auto=0)"
 
 # This function installs grub and sets it as the default boot option
 install_grub()
@@ -195,7 +186,7 @@ set default=0
 # Boot entries:
 # Yocto
 menuentry "Yocto from eMMC" {
-        linux (hd0,gpt1)/Image $bootarg
+        linux (\$root)/Image $bootarg
 }
 " > $grubcfg
 
@@ -221,8 +212,8 @@ fi
 partresult="$(/opt/mlnx/scripts/bfpart $bfpart_args)"
 persist_status=$(echo "$partresult" | grep PERSIST: | awk '{print $2}')
 
-# Update the firmware and boot the current kernel image.
-update_boot
+# Cleans up the actual boot options.
+/opt/mlnx/scripts/bfbootmgr --cleanall
 
 mkdosfs /dev/mmcblk0p1
 
@@ -394,22 +385,17 @@ EOF
 fi
 
 if [ -z "${skip_boot_update}" ]; then
-    # Enable boot partitions update. Note that UEFI Capsule update is
-    # supported in version 2.0 or greater in BlueField UEFI.
-    bfver=/opt/mlnx/scripts/bfver
-    uefi_ver=$($bfver | grep UEFI | cut -d':' -f2 | sed -e 's/[[:space:]]//')
-    uefi_ver_major=$(echo $uefi_ver | cut -d'.' -f1)
-    if [ $((uefi_ver_major)) -ge 2 ]; then
-        # This command MUST be executed after 'update_boot' and
-        # 'install_grub', otherwise the newly created boot option
-        # would be either cleaned up or unset from default option.
-        mount /dev/mmcblk0p1 /mnt; /opt/mlnx/scripts/bfrec --capsule; umount /mnt
-        # Wait until eMMC internal cache is fully flushed
-        sleep 3
-    else
-        # Otherwise, use the default path to update the boot partitions.
-        # This path relies on the 'mlxbf-bootctl' tool.
-        /opt/mlnx/scripts/bfrec
-    fi
+    # Update eMMC boot partitions. Update via either capsule
+    # path or default path (i.e., mlxbf-bootctl). This command
+    # MUST be executed after 'update_boot' and 'install_grub',
+    # otherwise the newly created boot option would be either
+    # cleaned up or unset from default option.
+    /opt/mlnx/scripts/bfrec
 fi
 
+# Execute miscellaneous tasks. These are vendor/customer specific
+# operations that are required during installation procedure.
+# Customers are invited to provide their own configuration and list
+# it in 'misc_task_hooks'.
+[[ -e /opt/mlnx/scripts/bfmisc ]] && \
+    (. /opt/mlnx/scripts/bfmisc; misc_task_hooks)
