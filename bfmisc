@@ -1,6 +1,6 @@
-#!/bin/sh -e
+#!/bin/sh
 
-# Copyright (c) 2017, Mellanox Technologies
+# Copyright (c) 2019, Mellanox Technologies
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -27,31 +27,28 @@
 # of the authors and should not be interpreted as representing official policies,
 # either expressed or implied, of the FreeBSD Project.
 
-TMP_DIR=$(mktemp -d)
-CURRENT_BFB=$TMP_DIR/"current.bfb"
+set -e
 
-rm -rf "$TMP_DIR"
-# Create a temporary folder for the generated files
-mkdir "$TMP_DIR"
+##
+# This script executes miscellaneous tasks. These are vendor/customer
+# specific operations that are required during installation procedure.
+##
 
-# Identify current primary boot partition
-DEV_PATH=$(mlxbf-bootctl | grep "primary" | cut -d ' ' -f 2)
+psid_boot_override()
+{
+    [[ ! -d /dev/mst ]] && mst start
 
-# Retrieve default.bfb from the eMMC
-mlxbf-bootctl -r "$DEV_PATH" -b "$CURRENT_BFB"
+    device="/dev/mst/mt41682_pciconf0"
+    [[ ! -c "$device" ]] && device="/dev/mst/bf-livefish"
 
-# Find and print the ATF version of current bfb
-echo BlueField ATF version: "$(strings "$CURRENT_BFB" | grep -m 1 "(\(release\|debug\))")"
+    psid=$(flint -d $device q | grep PSID: | awk '{print $2}')
+    [[ "$psid" == "JD_0000000001" ]] && \
+        /opt/mlnx/scripts/bfbootmgr --force shell p
 
-# Find and print the UEFI of current bfb
-echo BlueField UEFI version: "$(strings -e l "$CURRENT_BFB" | grep "BlueField" | cut -d':' -f 2)"
+    return 0
+}
 
-# Print BlueField version number if Yocto version file is present
-if [ -e "/etc/bluefield_version" ]; then
-	echo BlueField Release Version: "$(cat /etc/bluefield_version)"
-else
-	echo No Yocto version file present
-fi
-
-# Remove temporary directory
-rm -rf "$TMP_DIR"
+misc_task_hooks()
+{
+    psid_boot_override
+}
