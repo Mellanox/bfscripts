@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 #
 # Copyright 2017-2019 Mellanox Technologies. All Rights Reserved.
@@ -37,7 +37,7 @@ Create or dump a BlueField boot stream.
 
 import binascii
 import os
-import StringIO
+from io import StringIO
 import struct
 import sys
 
@@ -219,7 +219,7 @@ class ImageHdr:
               ((self.minor & 0xF) << 36) |
               ((self.next_img_ver & 0xF) << 44) |
               ((self.cur_img_ver & 0xF) << 48) |
-              (((self.length / 8) & 0xF) << 52) |
+              (((self.length // 8) & 0xF) << 52) |
               ((self.image_id & 0xFF) << 56))
 
         w1 = (((self.image_len & 0xFFFFFFFF) << 0) |
@@ -243,14 +243,14 @@ class ImageHdr:
         # variable-length headers, but for now, we can just read a fixed
         # amount.
         #
-        str = infile.read(self.length)
-        if not str:
+        instr = infile.read(self.length)
+        if not instr:
             raise NoHdr()
 
-        if len(str) < self.length:
+        if len(instr) < self.length:
             raise BadHdr("ImageHdr too short")
 
-        (w0, w1, w2) = struct.unpack("<QQQ", str)
+        (w0, w1, w2) = struct.unpack("<QQQ", instr)
 
         magic = w0 & 0xFFFFFFFF
         self.major = (w0 >> 32) & 0xF
@@ -295,7 +295,7 @@ class ImageHdr:
         if self.minor >= 2:
             outtext += " NxImVr: %d ImVr: %d" % (
                          self.next_img_ver, self.cur_img_ver)
-        print >> outfile, outtext
+        print(outtext, file=outfile)
 
 
 class Image:
@@ -333,7 +333,7 @@ class Image:
     def get_padding(self):
         """Return pad bytes."""
         length = self.header.get_image_length()
-        return "\0" * num_padding_bytes(length)
+        return b'\0' * num_padding_bytes(length)
 
     def get_image_id(self):
         """Return the numeric image ID for this image."""
@@ -407,14 +407,15 @@ class Image:
         """
 
         if infile.startswith("="):
-            self.bits = infile[1:]
+            self.bits = bytes(infile[1:], 'utf-8')
         else:
-            self.bits = open(infile, "rb").read()
+            with open(infile, "rb") as f:
+                self.bits = f.read()
 
         length = len(self.bits)
 
         crc = binascii.crc32(self.bits, 0)
-        crc = binascii.crc32("\0" * num_padding_bytes(length), crc)
+        crc = binascii.crc32(b'\0' * num_padding_bytes(length), crc)
         crc &= 0xFFFFFFFF
 
         # Check if idstr is suffixed with '-vN', while NOT assuming that
@@ -580,7 +581,7 @@ def dump_stream(infn, do_dump, do_extract, prefix):
             if verbose:
                 img.dump()
             else:
-                print "%10d %s" % (img.get_image_length(), desc)
+                print("%10d %s" % (img.get_image_length(), desc))
 
         if do_extract:
             xfile = open(prefix + fn, "wb")
