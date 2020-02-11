@@ -52,22 +52,49 @@ from optparse import OptionParser, OptionGroup
 # Contents: (command-line option, description, image ID for header)
 image_list = (
     # Images for ATF
-    ("bl2-cert", "Trusted Boot Firmware BL2 certificate", 6),
-    ("bl2", "Trusted Boot Firmware BL2", 1),
-    ("sys", "Running system's part number or PSID", 29),
+    ("bl2r-cert", "RIoT Core (BL2R) content certificate",  31),
+    ("bl2r",      "RIoT Core (BL2R) bin",                  30),
+    ("bl2-cert",  "Trusted Boot Firmware BL2 certificate", 6),
+    ("bl2",       "Trusted Boot Firmware BL2 bin",         1),
+    ("sys",       "Running system's part number or PSID",  29),
+
+    ("pseudo_spd_file", "File From Which Will Load Pseudo SPD Parameters", 32),
+
+    ("ddr4_pmu_train_imem", "UDIMM SNPS training image INSTRUCTIONS ", 33),
+    ("ddr4_pmu_train_dmem", "UDIMM SNPS training image DATA", 34),
+    ("ddr4_2d_pmu_train_imem", "UDIMM SNPS 2D training image INSTRUCTIONS", 35),
+    ("ddr4_2d_pmu_train_dmem", "UDIMM SNPS 2D training image DATA", 36),
+
+    ("ddr4_rdimm_pmu_train_imem", "RDIMM SNPS training image INSTRUCTIONS", 37),
+    ("ddr4_rdimm_pmu_train_dmem", "RDIMM SNPS training image DATA", 38),
+    ("ddr4_rdimm2d_pmu_train_imem", "RDIMM SNPS 2D training image INSTRUCTIONS", 39),
+    ("ddr4_rdimm2d_pmu_train_dmem", "RDIMM SNPS 2D training image DATA", 40),
+
+    ("ddr4_lrdimm_pmu_train_imem", "LRDIMM SNPS training image INSTRUCTIONS", 41),
+    ("ddr4_lrdimm_pmu_train_dmem", "LRDIMM SNPS training image DATA", 42),
+    ("ddr4_lrdimm2d_pmu_train_imem", "LRDIMM SNPS 2D training image INSTRUCTIONS", 43),
+    ("ddr4_lrdimm2d_pmu_train_dmem", "LRDIMM SNPS 2D training image DATA", 44),
+
+    ("ddr_ate_imem", "Analog Test Engine INSTRUCTIONS", 45),
+    ("ddr_ate_dmem", "Analog Test Engine DATA", 46),
+
+    ("ddr4_pie_image", "UDIMM Phy Initialization Engine", 47),
+    ("ddr4_rdimm_pie_image", "RDIMM Phy Initialization Engine", 48),
+    ("ddr4_lrdimm_pie_image", "LRDIMM Phy Initialization Engine", 49),
+
     ("bl30-key-cert", "SCP Firmware BL3-0 key certificate", 8),
     ("bl30-cert", "SCP Firmware BL3-0 certificate", 12),
     ("bl30", "SCP Firmware BL3-0", 2),
     ("trusted-key-cert", "Trusted key certificate", 7),
     ("bl31-key-cert", "EL3 Runtime Firmware BL3-1 key certificate", 9),
-    ("bl31-cert", "EL3 Runtime Firmware BL3-1 certificate", 13),
-    ("bl31", "EL3 Runtime Firmware BL3-1", 3),
+    ("bl31-cert", "EL3 Runtime Firmware BL3-1 content certificate", 13),
+    ("bl31", "EL3 Runtime Firmware BL3-1 bin", 3),
     ("bl32-key-cert", "Secure Payload BL3-2 (Trusted OS) key certificate", 10),
-    ("bl32-cert", "Secure Payload BL3-2 (Trusted OS) certificate", 14),
-    ("bl32", "Secure Payload BL3-2 (Trusted OS)", 4),
+    ("bl32-cert", "Secure Payload BL3-2 (Trusted OS) content certificate", 14),
+    ("bl32", "Secure Payload BL3-2 (Trusted OS) bin", 4),
     ("bl33-key-cert", "Non-Trusted Firmware BL3-3 key certificate", 11),
-    ("bl33-cert", "Non-Trusted Firmware BL3-3 certificate", 15),
-    ("bl33", "Non-Trusted Firmware BL3-3", 5),
+    ("bl33-cert", "Non-Trusted Firmware BL3-3 content certificate", 15),
+    ("bl33", "Non-Trusted Firmware BL3-3 bin", 5),
     # Images for UEFI
     ("boot-acpi", "Name of the ACPI table", 55),
     ("boot-dtb", "Name of the dtb file", 56),
@@ -76,8 +103,8 @@ image_list = (
     ("boot-args", "Arguments for boot image", 59),
     ("boot-timeout", "Boot menu timeout", 60),
     ("uefi-tests", "Specify what UEFI tests to run", 61),
-    ("mmc-cap", "Capsule to be used to update eMMC boot partition", 30),
-    ("spi-img", "HCA firmware image to be used to recover the SPI FLash", 31),
+    ("mmc-cap", "Capsule to be used to update eMMC boot partition", 50),
+    ("spi-img", "HCA firmware image to be used to recover the SPI FLash", 51),
     ("image", "Boot image", 62),
     ("initramfs", "In-memory filesystem", 63),
 )
@@ -560,8 +587,8 @@ def dump_stream(infn, do_dump, do_extract, prefix):
             fn = rev_image_table[id][0]
             desc = rev_image_table[id][1]
         else:
-            fn = "image_id_%d" % image_id
-            desc = "Unknown image type, ID %d" % image_id
+            fn = "image_id_%d" % id
+            desc = "Unknown image type, ID %d" % id
 
         if img.header.minor >= 2:
             fn += "-v%d" % img.get_image_ver()
