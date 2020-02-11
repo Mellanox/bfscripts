@@ -1,0 +1,223 @@
+#!/bin/sh
+
+# Copyright (c) 2020, Mellanox Technologies
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# The views and conclusions contained in the software and documentation are those
+# of the authors and should not be interpreted as representing official policies,
+# either expressed or implied, of the FreeBSD Project.
+
+bfcfg_version=0.1
+cfg_file=/etc/bf.cfg
+log_file=/tmp/bfcfg.log
+dump_mode=0
+
+mfg_cfg()
+{
+  local oob_mac_sysfs=/sys/bus/platform/drivers/mlx-bootctl/oob_mac
+  local opn_str_sysfs=/sys/bus/platform/drivers/mlx-bootctl/opn_str
+  local mac_sysfs=/sys/firmware/efi/efivars/OobMacAddr-8be4df61-93ca-11d2-aa0d-00e098032b8c
+  local mac_err opn_err mac
+
+  if [ $dump_mode -eq 1 ]; then
+    [ -e "${oob_mac_sysfs}" ] && echo "mfg: MFG_OOB_MAC=$(cat ${oob_mac_sysfs} 2>/dev/null)"
+    [ -e "${opn_str_sysfs}" ] && echo "mfg: MFG_OPN_STR=$(cat ${opn_str_sysfs} 2>/dev/null)"
+    return
+  fi
+
+  if [ -n "${MFG_OOB_MAC}" -a -e "${oob_mac_sysfs}" -a -n "${MFG_OPN_STR}" -a -e "${opn_str_sysfs}" ]; then
+    echo "mfg: OOB_MAC=${MFG_OOB_MAC}" >> ${log_file}
+    echo "${MFG_OOB_MAC}" > ${oob_mac_sysfs} 2>>${log_file}
+    mac_err=$?
+
+    echo "mfg: OPN_STR=${MFG_OPN_STR}" >> ${log_file}
+    echo "${MFG_OPN_STR}" > ${opn_str_sysfs} 2>>${log_file}
+    opn_err=$?
+
+    if [ ${mac_err} -eq 0 -a ${opn_err} -eq 0 ]; then
+      echo "mfg: lock the partition" >> ${log_file}
+      echo 1 > /sys/bus/platform/drivers/mlx-bootctl/mfg_lock 2>>${log_file}
+    else
+      echo "mfg: mac_err=${mac_err} opn_err=${opn_err}" >> ${log_file}
+    fi
+
+    # Update the MAC address in UEFI variable.
+    mac=$(echo "${MFG_OOB_MAC}" | sed 's/:/\\x/g')
+    mac="\\x07\\x00\\x00\\x00\\x${mac}"
+    chattr -i ${mac_sysfs} 2>/dev/null
+    printf ${mac} > ${mac_sysfs}
+  else
+    echo "mfg: skip" >> ${log_file}
+  fi
+}
+
+sys_cfg_one_byte()
+{
+  local tmp_file=$1
+  local name=$2
+  local offset=$3
+  local value=$4
+  local bin_value
+
+  if [ ${dump_mode} -eq 1 ]; then
+    value=$(hexdump -s "${offset}" -n 1 -e '/1 "%d" "\n"' "${tmp_file}")
+    echo "sys: ${name}=${value}"
+  elif [ -n "${value}" ]; then
+    bin_value=$(echo "${value}" | tr '[:lower:]' '[:upper:]')
+    if [ ."$value" = ."TRUE" ]; then
+      bin_value='\x01'
+    else
+      bin_value='\x00'
+    fi
+    printf ${bin_value} | dd of="${tmp_file}" seek="${offset}" bs=1 count=1 conv=notrunc 2> /dev/null
+
+    has_change=1
+    echo "sys: ${name}=${value}" >> ${log_file}
+  fi
+}
+
+#
+# This function writes to the BfSysCfg UEFI variable directly.
+# Below are the offsets defined in UEFI which is 4(fixed header) plus the offset
+# of the variable within the BfSysCfg struct. These offsets are not supposed to
+# change in order to be backward compatible with previous releases.
+#   VARIABLE(Name)       OFFSET(Byte)  SIZE(Byte)
+#   SYS_ENABLE_SMMU      24            1
+#   SYS_DISABLE_SPMI     25            1
+#   SYS_ENABLE_2ND_EMMC  26            1
+#   SYS_BOOT_PROTECT     27            1
+#   SYS_ENABLE_SPCR      31            1
+#   SYS_DISABLE_PCIE     32            1
+#   SYS_ENABLE_OPTEE     33            1
+#
+sys_cfg()
+{
+  local tmp_file=/tmp/.sysfs-data
+  local sys_cfg_sysfs=/sys/firmware/efi/efivars/BfSysCfg-9c759c02-e5a3-45e4-acfc-c34a500628a6
+
+  if [ $dump_mode -eq 0 -a ! -e "${sys_cfg_sysfs}" ]; then
+    echo "sys: failed to find the EFI variable" >> ${log_file}
+    return
+  fi
+
+  yes | cp -f ${sys_cfg_sysfs} ${tmp_file}
+  has_change=0
+
+  sys_cfg_one_byte ${tmp_file} "ENABLE_SMMU" 24 "${SYS_ENABLE_SMMU}"
+  sys_cfg_one_byte ${tmp_file} "DISABLE_SPMI" 25 "${SYS_DISABLE_SPMI}"
+  sys_cfg_one_byte ${tmp_file} "ENABLE_2ND_EMMC" 26 "${SYS_ENABLE_2ND_EMMC}"
+  sys_cfg_one_byte ${tmp_file} "BOOT_PROTECT" 27 "${SYS_BOOT_PROTECT}"
+  sys_cfg_one_byte ${tmp_file} "ENABLE_SPCR" 31 "${SYS_ENABLE_SPCR}"
+  sys_cfg_one_byte ${tmp_file} "DISABLE_PCIE" 32 "${SYS_DISABLE_PCIE}"
+  sys_cfg_one_byte ${tmp_file} "ENABLE_OPTEE" 33 "${SYS_ENABLE_OPTEE}"
+
+  if [ ${has_change} -eq 1 ]; then
+    chattr -i ${sys_cfg_sysfs}
+    cp ${tmp_file} ${sys_cfg_sysfs}
+    sync
+  fi
+
+  rm -f ${tmp_file}
+}
+
+misc_cfg()
+{
+  # Rshim MAC address.
+  local rshim_mac_sysfs=/sys/firmware/efi/efivars/RshimMacAddr-8be4df61-93ca-11d2-aa0d-00e098032b8c
+  local mac
+
+  if [ $dump_mode -eq 1 ]; then
+    mac=$(hexdump -v -e '/1 "%02x"' ${rshim_mac_sysfs})
+    mac="${mac:8:2}:${mac:10:2}:${mac:12:2}:${mac:14:2}:${mac:16:2}:${mac:18:2}"
+    echo "misc: NET_RSHIM_MAC=${mac}"
+  elif [ -n "${NET_RSHIM_MAC}" ]; then
+    mac=$(echo "${NET_RSHIM_MAC}" | sed 's/:/\\x/g')
+    mac="\\x07\\x00\\x00\\x00\\x${mac}"
+    chattr -i ${rshim_mac_sysfs}
+    printf ${mac} > ${rshim_mac_sysfs}
+    echo "misc: NET_RSHIM_MAC=${NET_RSHIM_MAC}" >> ${log_file}
+  fi
+}
+
+# Parse the partition configuration and export $EFI_PART, $ROOT_PART and
+# $PERSIST_PART
+part_info()
+{
+  local disk part value
+
+  for disk in {0..15}; do
+    eval "disk_name=\${DISK${disk}_NAME}"
+    [ -z "${disk_name}" ] && continue
+
+    for part in {0..15}; do
+      eval "value=\${DISK${disk}_PART${part}_MOUNT}"
+      if [ ."${value}" = ."/" ]; then
+        echo ROOT_PART="${disk_name}p${part}"
+      fi
+
+      eval "value=\${DISK${disk}_PART${part}_TYPE}"
+      if [ ."${value}" = ."EFI" ]; then
+        echo EFI_PART="${disk_name}p${part}"
+      fi
+
+      eval "value=\${DISK${disk}_PART${part}_PERSIST}"
+      if [ -n "${value}" ]; then
+        echo PERSIST_PART="${disk_name}p${part}"
+      fi
+    done
+  done
+}
+
+usage()
+{
+  echo "syntax: bfcfg [--help|-h] [--dump|-d] [--part-info|-p]"
+}
+
+# Source the configuration if exists.
+[ -e "${cfg_file}" ] && . ${cfg_file}
+
+# Parse the arguments.
+options=`getopt -n bfcfg -o dhp -l dump,help,part-info -- "$@"`
+eval set -- $options
+while [ "$1" != -- ]; do
+  case $1 in
+    --dump|-d) dump_mode=1 ;;
+    --help|-h) usage; exit 0 ;;
+    --part-info|-p) part_info; exit 0 ;;
+  esac
+  shift
+done
+shift
+
+# Start a new log file.
+echo "bfcfg (ver ${bfcfg_version})" > ${log_file}
+date >> ${log_file}
+echo >> ${log_file}
+
+# Mount the efi variables.
+efivars=/sys/firmware/efi/efivars
+test "$(ls -A ${efivars})" || mount -t efivarfs none ${efivars}
+
+mfg_cfg
+sys_cfg
+misc_cfg

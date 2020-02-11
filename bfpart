@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -e
 
 # Copyright (c) 2017, Mellanox Technologies
 # All rights reserved.
@@ -27,18 +27,152 @@
 # of the authors and should not be interpreted as representing official policies,
 # either expressed or implied, of the FreeBSD Project.
 
-# Build partition on the eMMC.
-
-set -e
-
 usage ()
 {
     echo "syntax: bfpart [-b MB] [-p MB] [-o]"
 }
 
-boot_size=100
-persistent_size=250
-persistent_uuid="CAFDC47B-3F21-4A78-81CC-F91944081165"
+default_cfg()
+{
+  DISK0_NAME=/dev/mmcblk0
+  DISK0_PART1_SIZE=100
+  DISK0_PART1_TYPE=EFI
+  DISK0_PART2_SIZE=0
+  DISK0_PART2_TYPE=Linux
+  DISK0_PART8_PERSIST=KEEP
+  DISK0_PART8_SIZE=250
+  DISK0_PART8_TYPE=Linux
+}
+
+bfcfg_scan()
+{
+  local disk_name part_size part_type part_persist part_mount
+  local disk_id part_uuid
+  local disk_sectors sector sector_start
+  local sector_start_reserve=2048 sector_end_reserve=33
+  local total_sectors auto_part cur_persist_uuid
+
+  # Support up to 16 disks and 16 partitions on each disk.
+  for disk in {0..15}; do
+    eval "disk_name=\${DISK${disk}_NAME}"
+    [ -z "${disk_name}" ] && continue
+
+    disk_sectors=$(fdisk -l ${disk_name} | grep "Disk ${disk_name}:" | awk '{print $5}')
+    disk_sectors=$((disk_sectors / 512))
+    sector_start=${sector_start_reserve}
+    total_sectors=$((sector_start_reserve + sector_end_reserve))
+    auto_part=255
+
+    eval "DISK${disk}_ID=$(uuidgen)"
+    eval "DISK${disk}_START=${sector_start}"
+
+    for part in {0..15}; do
+      eval "part_size=\${DISK${disk}_PART${part}_SIZE}"
+      eval "part_type=\${DISK${disk}_PART${part}_TYPE}"
+      [ -z "${part_size}" -o -z "${part_type}" ] && continue
+      part_type=$(echo $part_type | tr 'a-z' 'A-Z')
+      eval "part_persist=\${DISK${disk}_PART${part}_PERSIST}"
+      eval "part_mount=\${DISK${disk}_PART${part}_MOUNT}"
+
+      if [ "${part_type}" = "EFI" ]; then
+        part_type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+        part_uuid=3DCADB7E-BCCC-4897-A766-3C070EDD7C25
+      else
+        if [ "${part_type}" = "LINUX" ]; then
+          part_type=0FC63DAF-8483-4772-8E79-3D69D8477DE4
+        fi
+        if [ -n "${part_persist}" ]; then
+          # Convert to upper case.
+          part_persist=$(echo $part_persist | tr 'a-z' 'A-Z')
+          part_uuid=CAFDC47B-3F21-4A78-81CC-F91944081165
+        else
+          part_uuid=$(uuidgen)
+        fi
+      fi
+
+      sector_num=$((part_size * 1024 * 1024 / 512))
+
+      cur_persist_uuid="$(sfdisk --part-uuid ${disk_name} ${part} || true)"
+      if [ ."${part_persist}" = ."KEEP" ]; then
+        if [ ."${cur_persist_uuid}" = ."${part_uuid}" ]; then
+          sector_start="$(sfdisk -l ${disk_name} | grep ${disk_name}p${part} | awk '{print $2}')"
+          sector_num="$(sfdisk -l ${disk_name} | grep ${disk_name}p${part} | awk '{print $4}')"
+        else
+          eval "DISK${disk}_PART${part}_PERSIST=CREATE"
+        fi
+      fi
+
+      if [ "${sector_num}" = "0" ]; then
+        auto_part=${part}
+      fi
+
+      eval "DISK${disk}_PART${part}_TYPE=${part_type}"
+      eval "DISK${disk}_PART${part}_UUID=${part_uuid}"
+      eval "DISK${disk}_PART${part}_SECTOR_START=${sector_start}"
+      eval "DISK${disk}_PART${part}_SECTOR_NUM=${sector_num}"
+
+      total_sectors=$((total_sectors + sector_num))
+      sector_start=$((sector_start + sector_num))
+      eval "DISK${disk}_END=$((sector_start - 1))"
+    done
+
+    if [ ${total_sectors} -gt ${disk_sectors} ]; then
+      echo "total configured size exceeds disk size" 1>&2
+      exit 1
+    fi
+
+    if [ $auto_part -ne 255 ]; then
+      part_size=$(((disk_sectors - total_sectors) * 512 / 1024 / 1024))
+      eval "DISK${disk}_PART${auto_part}_SIZE=${part_size}"
+    fi
+  done
+}
+
+sfdisk_apply()
+{
+  local sector_start sector_end sector_num part_type part_uuid disk_id persist
+
+  SFDISK_TMP_CFG=/tmp/disk.sfdisk
+
+  for disk in {0..15}; do
+    rm -f ${SFDISK_TMP_CFG}
+
+    eval "disk_name=\${DISK${disk}_NAME}"
+    [ -z "${disk_name}" ] && continue
+    eval "disk_id=\${DISK${disk}_ID}"
+    eval "sector_start=\${DISK${disk}_START}"
+    eval "sector_end=\${DISK${disk}_END}"
+
+    echo "label: gpt" >> ${SFDISK_TMP_CFG}
+    echo "label-id: ${disk_id}" >> ${SFDISK_TMP_CFG}
+    echo "device: ${disk_name}" >> ${SFDISK_TMP_CFG}
+    echo "unit: sectors" >> ${SFDISK_TMP_CFG}
+    echo "first-lba: ${sector_start}" >> ${SFDISK_TMP_CFG}
+    echo "last-lba: ${sector_end}" >> ${SFDISK_TMP_CFG}
+
+    for part in {0..15}; do
+      eval "part_type=\${DISK${disk}_PART${part}_TYPE}"
+      eval "part_uuid=\${DISK${disk}_PART${part}_UUID}"
+      eval "sector_start=\${DISK${disk}_PART${part}_SECTOR_START}"
+      eval "sector_num=\${DISK${disk}_PART${part}_SECTOR_NUM}"
+      eval "persist=\${DISK${disk}_PART${part}_PERSIST}"
+
+      if [ -n "${persist}" ]; then
+        persist=$(echo $persist | tr 'A-Z' 'a-z')
+        echo "PERSIST: ${persist}"
+      fi
+
+      [ -z "${part_uuid}" ] && continue
+
+      echo "gpt.dat${part} : start=${sector_start}, size=${sector_num}, type=${part_type}, uuid=${part_uuid}" >> ${SFDISK_TMP_CFG}
+    done
+
+    dd if=/dev/zero of=${disk_name} bs=512 count=1
+    sfdisk ${disk_name} < /tmp/disk.sfdisk
+  done
+}
+
+BF_CFG_FILE=/etc/bf.cfg
 
 while getopts ":b:p:o" opt; do
     case $opt in
@@ -59,56 +193,22 @@ while getopts ":b:p:o" opt; do
     esac
 done
 
-start_reserved=2048    # sectors required for label before first partition
-end_reserved=33        # sectors required after last partition
-
-disk_size=$(fdisk -l /dev/mmcblk0 | grep "Disk /dev/mmcblk0:" | awk '{print $5}')
-disk_size=$((disk_size / 1024 / 1024))
-disk_sectors=$((disk_size * 1024 * 1024 / 512))
-
-disk_start=$start_reserved
-
-boot_start=$disk_start
-boot_end=$((boot_size * 1024 * 1024 / 512 - 1))
-boot_sectors=$((boot_end - boot_start + 1))
-
-cur_persist_uuid="$(sfdisk --part-uuid /dev/mmcblk0 8 || true)"
-
-if [ -z "$override_persist" ] && [ "$cur_persist_uuid" = $persistent_uuid ]; then
-    # Persistent partition exists, so leave everything as we found it
-    persistent_sectors="$(sfdisk -l /dev/mmcblk0 | grep '/dev/mmcblk0p8' | awk '{print $4}')"
-    persistent_end="$(sfdisk -l /dev/mmcblk0 | grep '/dev/mmcblk0p8' | awk '{print $3}')"
-    persistent_start="$(sfdisk -l /dev/mmcblk0 | grep '/dev/mmcblk0p8' | awk '{print $2}')"
-    echo PERSIST: keep
+# Use default config if arguments are provided or config file doesn't exist.
+if [ "$#" -ne 0 -o ! -e "${BF_CFG_FILE}" ]; then
+  default_cfg
+  [ -n "${boot_size}" ] && DISK0_PART1_SIZE=${boot_size}
+  [ -n "${persistent_size}" ] && DISK0_PART8_SIZE=${persistent_size}
+  [ ."${override_persist}" = ."1" ] && DISK0_PART8_PERSIST=CREATE
 else
-    # Persistent part does not exist
-    # Place persistent partition at the end of the disk
-    persistent_sectors=$((persistent_size * 1024 * 1024 / 512))
-    persistent_end=$((disk_sectors - end_reserved - 1))
-    persistent_start=$((persistent_end - persistent_sectors + 1))
-    echo PERSIST: create
+  . ${BF_CFG_FILE}
+  [ -z "${DISK0_NAME}" ] && default_cfg
 fi
 
-# Fill space between boot and persistent with root
-root_start=$((boot_end + 1))
-root_end=$((persistent_start - 1))
-root_sectors=$((root_end - root_start + 1))
+# First-time scan to figure out all the sizes.
+bfcfg_scan
 
-disk_end=$persistent_end
+# Second-time scan to adjust the offsets.
+bfcfg_scan
 
-cat > /tmp/disk.sfdisk <<EOF
-label: gpt
-label-id: 35C59B93-2752-492B-A244-62D1BD611793
-device: /dev/mmcblk0
-unit: sectors
-first-lba: $disk_start
-last-lba: $disk_end
-
-gpt.dat1 : start=$boot_start, size=$boot_sectors, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=3DCADB7E-BCCC-4897-A766-3C070EDD7C25
-gpt.dat2 : start=$root_start, size=$root_sectors, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=9E61E8B5-EC9C-4299-8A0B-1B42E3DBD4AC
-gpt.dat8 : start=$persistent_start, size=$persistent_sectors, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=$persistent_uuid
-EOF
-
-dd if=/dev/zero of=/dev/mmcblk0 bs=512 count=1
-
-sfdisk /dev/mmcblk0 < /tmp/disk.sfdisk
+# Apply the configuration
+sfdisk_apply

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 #
 # Copyright 2017-2019 Mellanox Technologies. All Rights Reserved.
@@ -37,7 +37,7 @@ Create or dump a BlueField boot stream.
 
 import binascii
 import os
-import StringIO
+from io import StringIO
 import struct
 import sys
 
@@ -58,29 +58,11 @@ image_list = (
     ("bl2",       "Trusted Boot Firmware BL2 bin",         1),
     ("sys",       "Running system's part number or PSID",  29),
 
-    ("pseudo_spd_file", "File From Which Will Load Pseudo SPD Parameters", 32),
+    ("ddr_ini", "File From Which Will Load DDR (pseudo spd) Parameters", 32),
 
-    ("ddr4_pmu_train_imem", "UDIMM SNPS training image INSTRUCTIONS ", 33),
-    ("ddr4_pmu_train_dmem", "UDIMM SNPS training image DATA", 34),
-    ("ddr4_2d_pmu_train_imem", "UDIMM SNPS 2D training image INSTRUCTIONS", 35),
-    ("ddr4_2d_pmu_train_dmem", "UDIMM SNPS 2D training image DATA", 36),
-
-    ("ddr4_rdimm_pmu_train_imem", "RDIMM SNPS training image INSTRUCTIONS", 37),
-    ("ddr4_rdimm_pmu_train_dmem", "RDIMM SNPS training image DATA", 38),
-    ("ddr4_rdimm2d_pmu_train_imem", "RDIMM SNPS 2D training image INSTRUCTIONS", 39),
-    ("ddr4_rdimm2d_pmu_train_dmem", "RDIMM SNPS 2D training image DATA", 40),
-
-    ("ddr4_lrdimm_pmu_train_imem", "LRDIMM SNPS training image INSTRUCTIONS", 41),
-    ("ddr4_lrdimm_pmu_train_dmem", "LRDIMM SNPS training image DATA", 42),
-    ("ddr4_lrdimm2d_pmu_train_imem", "LRDIMM SNPS 2D training image INSTRUCTIONS", 43),
-    ("ddr4_lrdimm2d_pmu_train_dmem", "LRDIMM SNPS 2D training image DATA", 44),
-
-    ("ddr_ate_imem", "Analog Test Engine INSTRUCTIONS", 45),
-    ("ddr_ate_dmem", "Analog Test Engine DATA", 46),
-
-    ("ddr4_pie_image", "UDIMM Phy Initialization Engine", 47),
-    ("ddr4_rdimm_pie_image", "RDIMM Phy Initialization Engine", 48),
-    ("ddr4_lrdimm_pie_image", "LRDIMM Phy Initialization Engine", 49),
+    ("snps_images", "Combined SNPS Images for all DIMM types", 33),
+    ("ddr_ate_imem", "Analog Test Engine INSTRUCTIONS", 34),
+    ("ddr_ate_dmem", "Analog Test Engine DATA", 35),
 
     ("bl30-key-cert", "SCP Firmware BL3-0 key certificate", 8),
     ("bl30-cert", "SCP Firmware BL3-0 certificate", 12),
@@ -237,7 +219,7 @@ class ImageHdr:
               ((self.minor & 0xF) << 36) |
               ((self.next_img_ver & 0xF) << 44) |
               ((self.cur_img_ver & 0xF) << 48) |
-              (((self.length / 8) & 0xF) << 52) |
+              (((self.length // 8) & 0xF) << 52) |
               ((self.image_id & 0xFF) << 56))
 
         w1 = (((self.image_len & 0xFFFFFFFF) << 0) |
@@ -261,14 +243,14 @@ class ImageHdr:
         # variable-length headers, but for now, we can just read a fixed
         # amount.
         #
-        str = infile.read(self.length)
-        if not str:
+        instr = infile.read(self.length)
+        if not instr:
             raise NoHdr()
 
-        if len(str) < self.length:
+        if len(instr) < self.length:
             raise BadHdr("ImageHdr too short")
 
-        (w0, w1, w2) = struct.unpack("<QQQ", str)
+        (w0, w1, w2) = struct.unpack("<QQQ", instr)
 
         magic = w0 & 0xFFFFFFFF
         self.major = (w0 >> 32) & 0xF
@@ -313,7 +295,7 @@ class ImageHdr:
         if self.minor >= 2:
             outtext += " NxImVr: %d ImVr: %d" % (
                          self.next_img_ver, self.cur_img_ver)
-        print >> outfile, outtext
+        print(outtext, file=outfile)
 
 
 class Image:
@@ -351,7 +333,7 @@ class Image:
     def get_padding(self):
         """Return pad bytes."""
         length = self.header.get_image_length()
-        return "\0" * num_padding_bytes(length)
+        return b'\0' * num_padding_bytes(length)
 
     def get_image_id(self):
         """Return the numeric image ID for this image."""
@@ -425,14 +407,15 @@ class Image:
         """
 
         if infile.startswith("="):
-            self.bits = infile[1:]
+            self.bits = bytes(infile[1:], 'utf-8')
         else:
-            self.bits = open(infile, "rb").read()
+            with open(infile, "rb") as f:
+                self.bits = f.read()
 
         length = len(self.bits)
 
         crc = binascii.crc32(self.bits, 0)
-        crc = binascii.crc32("\0" * num_padding_bytes(length), crc)
+        crc = binascii.crc32(b'\0' * num_padding_bytes(length), crc)
         crc &= 0xFFFFFFFF
 
         # Check if idstr is suffixed with '-vN', while NOT assuming that
@@ -598,7 +581,7 @@ def dump_stream(infn, do_dump, do_extract, prefix):
             if verbose:
                 img.dump()
             else:
-                print "%10d %s" % (img.get_image_length(), desc)
+                print("%10d %s" % (img.get_image_length(), desc))
 
         if do_extract:
             xfile = open(prefix + fn, "wb")
