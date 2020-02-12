@@ -12,7 +12,7 @@ Overview of each file:
 - **bffamily** Display the BlueField family for the particular board.
 - **bfinst** Simple installation script for both the bootloader and a root file
   system.
-- **bfmisc** Misc tasks performed during the installation procedure.
+- **bfmisc** Miscellaneous tasks performed during the installation procedure.
 - **bfpxe** PXE boot helper script.
 - **bfrec** Force update of the bootloader only.
 - **bfsbkeys** Dump all public keys in ATF.
