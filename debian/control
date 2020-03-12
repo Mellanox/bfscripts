@@ -1,0 +1,15 @@
+Source: mlxbf-scripts
+Section: net
+Priority: optional
+Maintainer: Vladimir Sokolovsky <vlad@mellanox.com>
+XSBC-Original-Maintainer: https://mellanox.com
+Build-Depends: debhelper (>= 10)
+Standards-Version: 4.1.2
+Vcs-Browser: https://github.com/Mellanox/bfscripts
+Vcs-Git: https://github.com/Mellanox/bfscripts.git
+
+Package: mlxbf-scripts
+Architecture: any
+Depends: ${misc:Depends}, mlxbf-bootctl, mlxbf-bootimages, python3
+Description: Contains Mellanox BlueField scripts
+ Contains Mellanox BlueField scripts that serve different ancillary purposes.
