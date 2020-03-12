@@ -1,4 +1,4 @@
-#!/bin/sh -e
+#!/bin/bash -e
 
 # Copyright (c) 2019, Mellanox Technologies
 # All rights reserved.
