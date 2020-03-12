@@ -1,0 +1,17 @@
+#!/bin/sh -e
+[ "$1" != "upgrade" ] || exit 0
+OPTS=""
+
+if [ -n "$D" ]; then
+    OPTS="--root=$D"
+fi
+
+if which deb-systemd-helper >/dev/null 2>/dev/null; then
+	if [ -z "$D" ]; then
+		deb-systemd-helper stop bfvcheck.service
+	fi
+
+	deb-systemd-helper "$OPTS" disable bfvcheck.service
+fi
+
+#DEBHELPER#
