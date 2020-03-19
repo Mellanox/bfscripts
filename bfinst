@@ -154,11 +154,14 @@ fi
 bootarg="$(cat /proc/cmdline | sed 's/initrd=initramfs//')"
 bootarg="$(echo "$bootarg" root=$ROOT_PART rootwait)"
 
+rescue_bootarg="$(cat /proc/cmdline | sed 's/initrd=initramfs//')"
+rescue_bootarg="$(echo "$bootarg" root=$ROOT_PART)"
+
 # Older versions of systemd-gpt-auto-generator can't parse
 # the eMMC boot partitions properly.  BlueField does not
 # rely on this service so we disable it to prevent seeing
 # error messages in the log (which are harmless).
-bootarg="$(echo "$bootarg" rd.systemd.gpt_auto=0 systemd.gpt_auto=0)"
+bootarg="$(echo "$bootarg" rd.systemd.gpt_auto=0 systemd.gpt_auto=0 fsck.mode=force fsck.repair=yes)"
 
 # This function installs grub and sets it as the default boot option
 install_grub()
@@ -199,6 +202,12 @@ set default=0
 # Yocto
 menuentry "Yocto from eMMC" {
         linux (\$root)/Image $bootarg
+}
+
+# Yocto rescue
+menuentry "Rescue from eMMC" {
+        linux (\$root)/Image $rescue_bootarg
+        initrd (\$root)/core-image-rescue-initramfs-bluefield.cpio.xz
 }
 " > $grubcfg
 
@@ -323,7 +332,7 @@ if [ -n "${full_root}" ]; then
     bootfifo_rootfs_file=/tmp/rootfs.tar
     if [ "${fspath}" = "${bootfifo_rootfs_file}" ]; then
       ${ECHO} "boot: wait for decompression"
-      for i in {1..300}; do
+      for i in {1..600}; do
         [ -f "${bootfifo_rootfs_file}_done" ] && break
         sleep 1
       done
@@ -377,7 +386,7 @@ if [ -n "${full_root}" ]; then
 fi
 
 if [ -z $full_root ] && [ -z $mini_root ]; then
-    mount $EFI_PART /mnt; cp /boot/Image /mnt; umount /mnt
+    mount $EFI_PART /mnt; cp /boot/Image /mnt; cp /boot/core-image-rescue-initramfs-bluefield.cpio.xz /mnt; umount /mnt
 
 cat <<EOF
 
