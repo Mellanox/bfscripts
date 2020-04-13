@@ -87,6 +87,7 @@ image_list = (
     ("uefi-tests", "Specify what UEFI tests to run", 61),
     ("mmc-cap", "Capsule to be used to update eMMC boot partition", 50),
     ("spi-img", "HCA firmware image to be used to recover the SPI FLash", 51),
+    ("ramdisk", "RAM Disk image", 54),
     ("image", "Boot image", 62),
     ("initramfs", "In-memory filesystem", 63),
 )
