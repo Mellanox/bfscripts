@@ -33,10 +33,14 @@ fi
 
 BF1_PLATFORM_ID=0x00000211
 BF2_PLATFORM_ID=0x00000214
-mst_device="/dev/mst/mt41682_pciconf0"
-if [ ! -c "$mst_device" ]; then
-	mst_device="/dev/mst/bf-livefish"
-fi
+
+mst_devs="/dev/mst/mt41682_pciconf0 /dev/mst/mt41686_pciconf0"
+
+for d in $mst_devs; do
+    if [ -e $d ]; then
+        mst_device=$d
+    fi
+done
 
 # Read chip version info from the CRSPACE
 bfversion=$(mcra $mst_device 0xf0014)
