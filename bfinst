@@ -431,7 +431,7 @@ if [ -z "${skip_boot_update}" ]; then
     # MUST be executed after 'install_grub', otherwise the newly
     # created boot option would be either cleaned up or unset
     # from default option.
-    /opt/mlnx/scripts/bfrec
+    /opt/mlnx/scripts/bfrec --bootctl
 fi
 
 # Execute miscellaneous tasks. These are vendor/customer specific
