@@ -1,0 +1,20 @@
+#!/bin/sh -e
+OPTS=""
+
+if [ -n "$D" ]; then
+    OPTS="--root=$D"
+fi
+
+if which deb-systemd-helper >/dev/null 2>/dev/null; then
+	if [ -z "$D" ]; then
+		deb-systemd-helper daemon-reload
+	fi
+
+	deb-systemd-helper "$OPTS" enable bfvcheck.service
+
+	if [ -z "$D" ]; then
+		deb-systemd-helper restart bfvcheck.service
+	fi
+fi
+
+#DEBHELPER#

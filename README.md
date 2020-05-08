@@ -1,34 +1,23 @@
-A public collection of useful scripts to help manage the Mellanox
-BlueField SoC.
+bfscripts
+=========
 
-==================================================================
+A public collection of useful scripts to help manage the Mellanox BlueField
+SoC.
 
-bfcpu-freq:
-        Display Arm core frequency.
-
-bfdracut:
-        Create am initramfs.
-
-bffamily:
-        Display the BlueField family for the particular board.
-
-bfinst:
-        Simple installation script for both the bootloader and a
-        root file system.
-
-bfpart:
-        Helper script to partition eMMC device.
-
-bfpxe:
-        PXE boot helper script.
-        
-bfrec:
-        Force update of the bootloader only.
-
-bfvcheck:
-bfver:
-        Software version checking scripts.
-
-bfvcheck.service:
-        A systemd service config file for enabling version
-        checks when booting.
+Overview of each file:
+- **bfbootmgr** Change boot options.
+- **bfcfg** Processes a config file passed over the rshim device.
+- **bfcpu-freq** Display Arm core frequency.
+- **bfdracut** Create an initramfs.
+- **bffamily** Display the BlueField family for the particular board.
+- **bfinst** Simple installation script for both the bootloader and a root file
+  system.
+- **bfmisc** Miscellaneous tasks performed during the installation procedure.
+- **bfpxe** PXE boot helper script.
+- **bfrec** Force update of the bootloader only.
+- **bfsbkeys** Dump all public keys in ATF.
+- **bfver** Print ATF, UEFI and rootfs versions.
+- **bfvcheck** Check whether software versions installed match those in current release.
+- **bfvcheck.service** Companion service to bfvcheck, runs bfvcheck at boot time.
+- **mlx-mkbfb** Builds and extracts BFB files.
+- **build-bfb** A simplifying wrapper for mlx-mkbfb.
