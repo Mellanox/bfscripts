@@ -1,0 +1,56 @@
+%global debug_package %{nil}
+
+Summary: Useful scripts for managing Mellanox BlueField hardware.
+Name: mlxbf-bfscripts
+Version: 3.0.alpha3
+Release: 1%{?dist}
+License: BSD
+
+Source: {{{ git_dir_pack dir_name=bfscripts source_name=mlxbf-bfscripts.tar.gz }}}
+
+BuildRequires: python3-devel
+BuildRequires: /usr/bin/pathfix.py
+
+Requires: mlxbf-bootctl
+Requires: mlxbf-aarch64-firmware
+Requires: bash
+Requires: python
+Requires: grub2-tools
+Requires: dosfstools
+Requires: e2fsprogs
+Requires: efibootmgr
+Requires: pciutils
+Requires: util-linux
+Requires: binutils
+
+%description
+Useful scripts for managing Mellanox BlueField hardware.
+
+%prep
+{{{ git_dir_setup_macro dir_name=bfscripts }}}
+pathfix.py -pni "%{__python3} %{py3_shbang_opts}" mlx-mkbfb
+
+%install
+%global installdir %{buildroot}/opt/mlnx/scripts
+mkdir -p %{installdir}
+install bfbootmgr  %{installdir}
+install bfcfg      %{installdir}
+install bfcpu-freq %{installdir}
+install bfdracut   %{installdir}
+install bffamily   %{installdir}
+install bfinst     %{installdir}
+install bfmisc     %{installdir}
+install bfpxe      %{installdir}
+install bfrec      %{installdir}
+install bfsbkeys   %{installdir}
+install bfvcheck   %{installdir}
+install bfver      %{installdir}
+
+install mlx-mkbfb %{installdir}
+
+%files
+%defattr(-,root,root)
+/opt/mlnx/scripts/*
+
+%changelog
+{{{ git_dir_changelog }}}
