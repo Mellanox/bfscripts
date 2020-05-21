@@ -76,11 +76,11 @@ RUNTIME_ATF=$( echo "$bfver_out" | grep -m 1 "ATF" | cut -d':' -f 2,3 | \
 RUNTIME_UEFI=$( echo "$bfver_out" | grep -m 1 "UEFI" | cut -d':' -f 2 | \
     sed -e 's/[[:space:]]//' )
 
-mlxfw_out=$( $mlxfw --query )
+mlxfw_out=$( $mlxfw --query ) && MLXFW_SUCCESS=0 || MLXFW_SUCCESS=1
 
 FW_UPDATED=no
 
-if [ $? -eq 0 ]; then
+if [ $MLXFW_SUCCESS -eq 0 ]; then
     # awk is used here to ease dealing with the spaces used in mlxfwmanager
     # output, and to make sure we pick the right FW line
     FIRMWARE_VERSIONS=$( echo "$mlxfw_out" | awk '($1 == "FW") && ($2 != "(Running)") { print $2 "," $3 }' )
