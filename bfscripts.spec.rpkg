@@ -1,10 +1,13 @@
 %global debug_package %{nil}
 
-Summary: Useful scripts for managing Mellanox BlueField hardware.
+Summary: Utility scripts for managing Mellanox BlueField hardware
 Name: mlxbf-bfscripts
 Version: 3.0.alpha3
-Release: 2%{?dist}
+URL: https://github.com/Mellanox/bfscripts
+Release: 3%{?dist}
 License: BSD
+
+BuildArch: noarch
 
 Source: {{{ git_dir_pack dir_name=bfscripts source_name=mlxbf-bfscripts.tar.gz }}}
 
@@ -30,6 +33,9 @@ Useful scripts for managing Mellanox BlueField hardware.
 %prep
 {{{ git_dir_setup_macro dir_name=bfscripts }}}
 pathfix.py -pni "%{__python3} %{py3_shbang_opts}" mlx-mkbfb
+
+%build
+exit 0
 
 %install
 %global installdir %{buildroot}/opt/mlnx/scripts
@@ -69,6 +75,7 @@ systemctl daemon-reload
 /opt/mellanox
 /opt/mlnx/scripts/*
 /usr/lib/systemd/system/bfvcheck.service
+%doc README.md
 
 %changelog
 {{{ git_dir_changelog }}}
