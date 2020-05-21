@@ -3,11 +3,12 @@
 Summary: Useful scripts for managing Mellanox BlueField hardware.
 Name: mlxbf-bfscripts
 Version: 3.0.alpha3
-Release: 1%{?dist}
+Release: 2%{?dist}
 License: BSD
 
 Source: {{{ git_dir_pack dir_name=bfscripts source_name=mlxbf-bfscripts.tar.gz }}}
 
+BuildRequires: systemd
 BuildRequires: python3-devel
 BuildRequires: /usr/bin/pathfix.py
 
@@ -48,9 +49,26 @@ install bfver      %{installdir}
 
 install mlx-mkbfb %{installdir}
 
+mkdir -p %{buildroot}%{_unitdir}/
+install bfvcheck.service %{buildroot}%{_unitdir}/
+
+ln -s /opt/mlnx %{buildroot}/opt/mellanox
+
+%post
+systemctl enable bfvcheck.service
+systemctl daemon-reload
+systemctl start bfvcheck.service >/dev/null 2>&1
+
+%preun
+systemctl stop bfvcheck.service >/dev/null 2>&1
+systemctl disable bfvcheck.service
+systemctl daemon-reload
+
 %files
 %defattr(-,root,root)
+/opt/mellanox
 /opt/mlnx/scripts/*
+/usr/lib/systemd/system/bfvcheck.service
 
 %changelog
 {{{ git_dir_changelog }}}
