@@ -40,7 +40,7 @@ COMMAND list:
     --help                          : print help.
     --add <DISTRO> <KERNEL> <ARGS>  : create a new boot entry.
     --cleanall                      : delete all boot entires.
-    --force <shell|pxe|default> [p] : boot override; if 'p' is
+    --force <shell|default> [p]     : boot override; if 'p' is
                                       used then the boot order
                                       would be persistent across
                                       reboots.
@@ -166,9 +166,7 @@ boot_override()
 
     [[ -e "$var" ]] && chattr -i $var
 
-    if [ "$select" == "pxe" ]; then
-        data="01"
-    elif [ "$select" == "shell" ]; then
+    if [ "$select" == "shell" ]; then
         data="02"
     elif [ "$select" == "default" ]; then
         [[ -e "$var" ]] && (echo "Deleting $var"; rm $var)
@@ -211,7 +209,7 @@ if [ -n "$force" ]; then
     # Check arguments
     if [ $# -lt 1 ]; then
         echo "$PROGNAME: invalid operand(s)"
-        echo "Try: $PROGNAME --force <shell|pxe|default> [p]"
+        echo "Try: $PROGNAME --force <shell|default> [p]"
         exit 1
     fi
     if [ -n "$2" ] && [ "$2" != "p" ]; then

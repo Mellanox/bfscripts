@@ -46,7 +46,6 @@ install bfcpu-freq %{installdir}
 install bfdracut   %{installdir}
 install bffamily   %{installdir}
 install bfinst     %{installdir}
-install bfmisc     %{installdir}
 install bfpxe      %{installdir}
 install bfrec      %{installdir}
 install bfsbkeys   %{installdir}
