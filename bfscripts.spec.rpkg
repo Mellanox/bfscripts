@@ -4,7 +4,7 @@ Summary: Utility scripts for managing Mellanox BlueField hardware
 Name: mlxbf-bfscripts
 Version: 3.0.alpha3
 URL: https://github.com/Mellanox/bfscripts
-Release: 3%{?dist}
+Release: 4%{?dist}
 License: BSD
 
 BuildArch: noarch
@@ -71,6 +71,7 @@ systemctl disable bfvcheck.service
 systemctl daemon-reload
 
 %files
+%license LICENSE
 %defattr(-,root,root)
 /opt/mellanox
 /opt/mlnx/scripts/*
