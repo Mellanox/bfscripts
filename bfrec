@@ -130,8 +130,7 @@ uefi_capsule_update()
 
     # First, check whether UEFI supports capsule update. Note that UEFI
     # Capsule update is supported in UEFI version 2.0 or greater.
-    bfver=/opt/mlnx/scripts/bfver
-    uefi_ver=$($bfver | grep UEFI | cut -d':' -f2 | sed -e 's/[[:space:]]//')
+    uefi_ver=$(bfver | grep UEFI | cut -d':' -f2 | sed -e 's/[[:space:]]//')
     uefi_ver_major=$(echo $uefi_ver | cut -d'.' -f1)
 
     num_re='^[0-9]+$'
