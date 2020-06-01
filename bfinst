@@ -433,6 +433,3 @@ if [ -z "${skip_boot_update}" ]; then
     # from default option.
     /opt/mlnx/scripts/bfrec --bootctl
 fi
-
-# Update configuration in case it's overwritten by bfinst
-bfcfg
