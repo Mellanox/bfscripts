@@ -94,10 +94,11 @@ do
 done
 
 if [ -n "$bootctl_mode" ] && [ -n "$capsule_mode" ]; then
-    cat <<EOF
-ERROR: Use either options '--bootctl' or '--capsule'
-EOF
+    echo "ERROR: Use either options '--bootctl' or '--capsule'"
     exit 1
+elif [ -z "$bootctl_mode" ] && [ -z "$capsule_mode" ]; then
+    bootctl_mode=1
+    option_name="bootctl"
 fi
 
 bfb_location=/lib/firmware/mellanox/boot
@@ -314,11 +315,3 @@ elif [ -n "$capsule_mode" ]; then
     # Initiate UEFI capsule update.
     uefi_capsule_update; exit $?
 fi
-
-# If we reach here, then try both modes. Start with capsule update path
-# otherwise use the bootctl tool.
-next_update_action=kernel_bootctl_update
-next_update_path=bootctl
-
-uefi_capsule_update $next_update_action $next_update_path
-
