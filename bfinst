@@ -433,10 +433,3 @@ if [ -z "${skip_boot_update}" ]; then
     # from default option.
     /opt/mlnx/scripts/bfrec --bootctl
 fi
-
-# Execute miscellaneous tasks. These are vendor/customer specific
-# operations that are required during installation procedure.
-# Customers are invited to provide their own configuration and list
-# it in 'misc_task_hooks'.
-[[ -e /opt/mlnx/scripts/bfmisc ]] && \
-    (. /opt/mlnx/scripts/bfmisc; misc_task_hooks)
