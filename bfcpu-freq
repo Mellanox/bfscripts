@@ -57,9 +57,9 @@ fi
 
 bfversion=$(mcra $mst_device 0xf0014.0:16)
 
-if [ $bfversion == $BF1_PLATFORM_ID ]; then
+padfreq=156.25 # MHz
 
-	padfreq=156.25 # MHz
+if [ $bfversion == $BF1_PLATFORM_ID ]; then
 
 	F=$(($(mcra $mst_device 0x1c0384.3:13)))
 	R=$(($(mcra $mst_device 0x1c0384.20:6)))
@@ -72,16 +72,14 @@ if [ $bfversion == $BF1_PLATFORM_ID ]; then
 
 elif [ $bfversion == $BF2_PLATFORM_ID ]; then
 
-	padfreq=200 # MHz
-
-	if [ $is_livefish == true ]; then
+	if [ "$is_livefish" == "true" ]; then
 		echo "core freq = ${padfreq}MHz"
 		exit
 	fi
 
 	F=$(($(mcra $mst_device 0xf0f90.0:26)))
 	R=$(($(mcra $mst_device 0xf0f90.26:6)))
-	OD=$(($(mcra $mst_device 0xf0f94.1:4)))
+	OD=$(($(mcra $mst_device 0xf0f94.0:4)))
 
 	# F= padfreq*(F/16384)/(R+1)/(OD+1)
 	freq=$(echo "$F $padfreq * 16384 / $R 1 + / $OD 1 + / p"  | dc)
