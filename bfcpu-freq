@@ -72,11 +72,6 @@ if [ $bfversion == $BF1_PLATFORM_ID ]; then
 
 elif [ $bfversion == $BF2_PLATFORM_ID ]; then
 
-	if [ "$is_livefish" == "true" ]; then
-		echo "core freq = ${padfreq}MHz"
-		exit
-	fi
-
 	F=$(($(mcra $mst_device 0xf0f90.0:26)))
 	R=$(($(mcra $mst_device 0xf0f90.26:6)))
 	OD=$(($(mcra $mst_device 0xf0f94.0:4)))
