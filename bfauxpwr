@@ -1,0 +1,106 @@
+#!/bin/bash
+
+# Copyright (c) 2020, Mellanox Technologies
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# The views and conclusions contained in the software and documentation are those
+# of the authors and should not be interpreted as representing official policies,
+# either expressed or implied, of the FreeBSD Project.
+
+# This feature is supported only on OCP 3.0 cards
+
+usage()
+{
+  cat <<EOF
+Usage: $0 [--help] [--update-acpi]
+EOF
+}
+
+update_acpi()
+{
+  powerconf=/etc/acpi/events/powerconf
+  powercontrol=/etc/acpi/actions/powercontrol.sh
+  systemdconf=/etc/systemd/logind.conf
+
+  mkdir -p /etc/acpi/events
+  echo \
+"event=button/power.*
+action=$powercontrol
+" > $powerconf
+
+  mkdir -p /etc/acpi/actions
+  echo \
+"#!/bin/sh
+
+echo 441 > /sys/class/gpio/export
+value=\$(cat /sys/class/gpio/gpio441/value)
+
+echo \$value > /root/log
+
+for i in {1..15}
+do
+  echo \$value &>/dev/null > /sys/devices/system/cpu/cpu\$i/online
+done
+
+echo 441 > /sys/class/gpio/unexport
+" > $powercontrol
+
+  chmod +x $powercontrol
+
+  systemctl restart acpid
+
+  echo "Acpid config updated."
+
+  if [ -f "$systemdconf" ]; then
+    configexist=$(grep -c '^HandlePowerKey=ignore' $systemdconf)
+    otherconfig=$(grep -c '^HandlePowerKey' $systemdconf)
+    if [ $configexist -ge 1 ]; then
+      echo "Systemd config exists. Done."
+    elif [ $otherconfig -ge 1 ]; then
+      echo "Please remove systemd HandlePowerKey setting and try again."
+    else
+      echo "HandlePowerKey=ignore" >> $systemdconf
+      echo "Systemd config has been updated. Please reboot the system."
+    fi
+  else
+    echo "Please check systemd config file if HandlePowerKey is set to ignore."
+  fi
+}
+
+while true
+do
+  case $1 in
+      -h | --help)
+          usage
+          exit 0
+          ;;
+      --update-acpi)
+          update_acpi
+          exit 0
+          ;;
+      *)
+          usage
+          exit 1
+          ;;
+  esac
+done
