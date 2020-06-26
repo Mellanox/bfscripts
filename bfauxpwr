@@ -39,7 +39,7 @@ EOF
 update_acpi()
 {
   powerconf=/etc/acpi/events/powerconf
-  powercontrol=/etc/acpi/actions/powercontrol
+  powercontrol=/etc/acpi/actions/powercontrol.sh
   systemdconf=/etc/systemd/logind.conf
 
   mkdir -p /etc/acpi/events
@@ -50,10 +50,12 @@ action=$powercontrol
 
   mkdir -p /etc/acpi/actions
   echo \
-"#!/bin/bash
+"#!/bin/sh
 
 echo 441 > /sys/class/gpio/export
 value=\$(cat /sys/class/gpio/gpio441/value)
+
+echo \$value > /root/log
 
 for i in {1..15}
 do
