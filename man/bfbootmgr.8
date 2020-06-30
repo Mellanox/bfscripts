@@ -1,0 +1,20 @@
+.TH BFBOOTMGR 8 "June 2020"
+.SH NAME
+bfbootmgr \- modify efi boot options
+.SH SYNOPSIS
+.B bfbootmgr 
+.RB [ \-h | \-\-help ]
+.RB [ \-\-cleanall | \-\-add
+.I DISTRO KERNEL
+.IR ARGS ]
+.SH DESCRIPTION
+Adds or removes EFI boot entries suitable for booting BlueField hardware. This
+script requires efivarfs to function properly.
+.SH OPTIONS
+.IP "--cleanall"
+Removes all EFI boot options. Mutually exclusive with \-\-add.
+.IP "--add DISTRO KERNEL ARGS"
+Adds an EFI boot menu entry suitable for booting a bluefield device. This entry
+will boot the kernel at path KERNEL, with bootargs ARGS, on partition 1 of
+.I /dev/mmcblk0.
+The entry will have label DISTRO.

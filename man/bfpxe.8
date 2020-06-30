@@ -1,0 +1,19 @@
+.TH BFPXE 8 "June 2020"
+.SH NAME
+bfpxe \- allows installation of Yocto through remote kickstart
+.SH SYNOPSIS
+.B bfpxe
+.SH DESCRIPTION
+Allows the installation of the BlueField Yocto distribution through a remote
+kickstart file. The path to the kickstart file and the network configuration
+are specified using kernel arguments.
+.SH OPTIONS
+.B bfpxe
+takes no options.
+.SH KERNEL ARGUMENTS
+.IP bfks=<PATH>
+HTTP path for the kickstart script. For example,
+.I http://192.168.100.1/ks/bf-yocto.ks
+.IP "bfnet=<IFNAME>:<IPADDR>:<NETMASK> or <IFNAME>:dhcp"
+Network configuration entry. IFNAME can have ".", which indicates VLAN
+interface, such as "tmfifo_net0.100:dhcp".

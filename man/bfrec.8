@@ -1,0 +1,26 @@
+.TH BFREC 8 "June 2020"
+.SH NAME
+bfrec \- install boot firmware to the bluefield eMMC
+.SH SYNOPSIS
+.B bfrec
+.RB [ \-\-help ]
+.RB [ \-\-bootctl
+.RI [ FILE ]]
+.RB [ \-\-capsule
+.RI [ FILE ]]
+.SH DESCRIPTION
+Installs boot firmware FILE to the bluefield eMMC with one of two methods,
+as described in
+.B OPTIONS.
+The system must be rebooted for the installation to take effect.
+.PP
+If no FILE, use
+.I /lib/firmware/mellanox/boot/default.bfb
+.SH OPTIONS
+.IP "--bootctl [FILE]"
+Install firmware using the
+.B mlxbf-bootctl
+utility. 
+.IP "--capsule [FILE]"
+Set up a UEFI capsule install using FILE. The installation will take place
+after reboot.

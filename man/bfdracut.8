@@ -1,0 +1,15 @@
+.TH BFDRACUT 8 "June 2020"
+.SH NAME
+bfdracut \- create an initramfs capable of PXE booting a BlueField SoC
+.SH SYNOPSIS
+.B bfdracut
+.RI [ OUTPUT_FILE ]
+.SH DESCRIPTION
+Uses dracut to create an initramfs enabling IPoIB and NFS mounting a rootfs
+while PXE booting in IB mode. If OUTPUT_FILE is specified, the initramfs will
+be output to the given location. Otherwise, the default location,
+.I /boot/initramfs-<KERNEL_VERSION>-nfs-ib.img
+is used.
+.SH OPTIONS
+.B bfdracut
+takes no options.
