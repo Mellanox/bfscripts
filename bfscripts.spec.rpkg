@@ -38,7 +38,7 @@ pathfix.py -pni "%{__python3} %{py3_shbang_opts}" mlx-mkbfb
 exit 0
 
 %install
-%global installdir %{buildroot}/opt/mlnx/scripts
+%global installdir %{buildroot}%{_bindir}
 mkdir -p %{installdir}
 install bfbootmgr  %{installdir}
 install bfcfg      %{installdir}
@@ -57,8 +57,6 @@ install mlx-mkbfb %{installdir}
 mkdir -p %{buildroot}%{_unitdir}/
 install bfvcheck.service %{buildroot}%{_unitdir}/
 
-ln -s /opt/mlnx %{buildroot}/opt/mellanox
-
 %post
 systemctl enable bfvcheck.service
 systemctl daemon-reload
@@ -72,8 +70,8 @@ systemctl daemon-reload
 %files
 %license LICENSE
 %defattr(-,root,root)
-/opt/mellanox
-/opt/mlnx/scripts/*
+/usr/bin/bf*
+/usr/bin/mlx-mkbfb
 /usr/lib/systemd/system/bfvcheck.service
 %doc README.md
 

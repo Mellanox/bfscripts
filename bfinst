@@ -87,7 +87,7 @@ PERSIST_PART=/dev/mmcblk0p8
 
 # Load bf.cfg if exists, which could re-define the EFI_PART & ROOT_PART.
 if [ -e /etc/bf.cfg ]; then
-  eval "$(/opt/mlnx/scripts/bfcfg --part-info)"
+  eval "$(bfcfg --part-info)"
 fi
 
 # If both full_root and mini_root are set to a non-empty string
@@ -431,5 +431,5 @@ if [ -z "${skip_boot_update}" ]; then
     # MUST be executed after 'install_grub', otherwise the newly
     # created boot option would be either cleaned up or unset
     # from default option.
-    /opt/mlnx/scripts/bfrec --bootctl
+    bfrec --bootctl
 fi
