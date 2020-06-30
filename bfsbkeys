@@ -72,36 +72,33 @@ DEV_PATH=$(mlxbf-bootctl | grep "primary" | cut -d ' ' -f 2)
 mlxbf-bootctl -r "$DEV_PATH" -b "$CURRENT_BFB"
 
 # Get bfb components using mlx-mkbfb
-SCRIPTS_DIR="/opt/mlnx/scripts"
-if [ -d "$SCRIPTS_DIR" ]; then
-	cd "$TMP_DIR"
-	$SCRIPTS_DIR/mlx-mkbfb -x "$CURRENT_BFB"
+cd "$TMP_DIR"
+mlx-mkbfb -x "$CURRENT_BFB"
 
-	declare -A certs=(["dump-bl2-cert-v$certversion"]="BL2 Public Key"
-			["dump-bl31-key-cert-v$certversion"]="BL31 Public Key"
-			["dump-bl33-key-cert-v$certversion"]="BL33 Public Key"
-			["dump-trusted-key-cert-v$certversion"]="Trusted Key")
+declare -A certs=(["dump-bl2-cert-v$certversion"]="BL2 Public Key"
+        ["dump-bl31-key-cert-v$certversion"]="BL31 Public Key"
+        ["dump-bl33-key-cert-v$certversion"]="BL33 Public Key"
+        ["dump-trusted-key-cert-v$certversion"]="Trusted Key")
 
-	nocert=1
-	for i in "${!certs[@]}"
-	do
-		if [ ! -e $i ]; then
-			continue
-		fi
+nocert=1
+for i in "${!certs[@]}"
+do
+    if [ ! -e $i ]; then
+        continue
+    fi
 
-		nocert=0
-		echo -e "\n${certs[$i]}:"
-		echo -e "\n\tModulus:"
-		openssl x509 -in $i -inform der -text > $TMP_FILE
-		sed -e '1,/Modulus:/d' -e '/Exponent:/,$d' $TMP_FILE
-		echo -e "\n\tExponent:"
-		exp=$(sed -n -e 's/^.*Exponent: //p' $TMP_FILE | cut -d ' ' -f 1)
-		echo -e "\t\t    $exp"
-	done
+    nocert=0
+    echo -e "\n${certs[$i]}:"
+    echo -e "\n\tModulus:"
+    openssl x509 -in $i -inform der -text > $TMP_FILE
+    sed -e '1,/Modulus:/d' -e '/Exponent:/,$d' $TMP_FILE
+    echo -e "\n\tExponent:"
+    exp=$(sed -n -e 's/^.*Exponent: //p' $TMP_FILE | cut -d ' ' -f 1)
+    echo -e "\t\t    $exp"
+done
 
-	if [ $nocert == 1 ]; then
-		echo "No certificates found in boot image"
-	fi
+if [ $nocert == 1 ]; then
+    echo "No certificates found in boot image"
 fi
 
 # Remove temporary directory

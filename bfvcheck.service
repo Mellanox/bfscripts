@@ -4,7 +4,7 @@ After=getty.target
 
 [Service]
 Type=idle
-ExecStart=/opt/mellanox/scripts/bfvcheck
+ExecStart=/usr/bin/bfvcheck
 StandardOutput=journal+console
 
 [Install]
