@@ -31,7 +31,6 @@ echo "Beginning version check..."
 
 # bfb file used to extract ATF/UEFI's expected version information
 BOOTIMG_LOCATION=/lib/firmware/mellanox/boot/default.bfb
-bfver=/opt/mellanox/scripts/bfver
 
 # find the firmware package on the system
 mlxfw=/opt/mellanox/mlnx-fw-updater/firmware/mlxfwmanager_sriov_dis_aarch64
@@ -69,7 +68,7 @@ BUILD_ATF=$(strings $BOOTIMG_LOCATION | grep -m 1 "(\(release\|debug\))")
 BUILD_UEFI=$(strings -e l $BOOTIMG_LOCATION | grep "BlueField" |\
     cut -d':' -f 2)
 
-bfver_out="$( $bfver )"
+bfver_out="$( bfver )"
 
 RUNTIME_ATF=$( echo "$bfver_out" | grep -m 1 "ATF" | cut -d':' -f 2,3 | \
     sed -e 's/[[:space:]]//' )
