@@ -2,9 +2,9 @@
 
 Summary: Utility scripts for managing Mellanox BlueField hardware
 Name: mlxbf-bfscripts
-Version: 3.0.alpha3
+Version: 3.0.0~beta1
 URL: https://github.com/Mellanox/bfscripts
-Release: 4%{?dist}
+Release: 1%{?dist}
 License: BSD
 
 BuildArch: noarch
@@ -88,14 +88,14 @@ systemctl daemon-reload
 
 %files
 %license LICENSE
-%defattr(-,root,root)
 /usr/bin/bf*
 /usr/bin/mlx-mkbfb
-%{_mandir}/man1/*
-%{_mandir}/man8/*
-%{_unitdir}/bfvcheck.service
+%attr(644, root, root) %{_mandir}/man1/*
+%attr(644, root, root) %{_mandir}/man8/*
+%attr(644, root, root) %{_unitdir}/bfvcheck.service
 
 %doc README.md
 
 %changelog
-{{{ git_dir_changelog }}}
+* Wed Jul 1 2020 Spencer Lingard <spencer@nvidia.com> - 3.0.0~beta1-1
+Initial packaging.
