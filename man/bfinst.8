@@ -1,0 +1,47 @@
+.TH BFINST 8 "June 2020"
+.SH NAME
+bfinst \- Install Yocto on the BlueField eMMC
+.SH SYNOPSIS
+.B bfinst
+.RB [ \-\-help | \-h ]
+.PP
+.B bfinst
+[options...]
+.B \-\-minifs
+.PP
+.B bfinst
+[options...]
+.B \-\-fullfs
+.I ROOTFS_FILE
+.SH DESCRIPTION
+Installs the Yocto Project reference distribution (sometimes referred to as
+BlueOS) to the eMMC. All partitions on the device must first be unmounted.
+.B Running this command will destroy data on the eMMC,
+with the exception of the persistent partition, when not given the
+.B \-\-fmtpersist
+option. See
+.BR bfpart (8)
+for more detail on partition layout for installation. This script will update
+ATF and UEFI by default. Use
+.B \-\-skip-boot-update
+to skip this step.
+.SH OPTIONS
+.IP "--minifs"
+Installs the currently running rootfs to the eMMC. This option is useful when
+running on an initramfs passed over the rshim device.
+.IP "--fullfs ROOTFS_FILE"
+Installs ROOTFS_FILE to the eMMC. Only tar.xz is supported.
+.IP "--unloadmods"
+Unload various mellanox kernel modules after partitioning the eMMC, before
+installing the rootfs.
+.IP "--fmtpersist"
+If a persistent data partition is present on the eMMC, destroy it and create
+a new one during installation. If this option is not specified, all persistent
+data will be ignored by the installer.
+.IP "--persistcfg"
+Enable the persistent /etc feature. All modifications to /etc will be stored
+on the persistent partition, and will not be wiped by default in subsequent
+installs. No validiation is performed on whether the old changes are compatible
+with the new base rootfs.
+.IP "--skip-boot-update"
+Skips the installation of new boot firmware.
