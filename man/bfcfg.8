@@ -23,8 +23,9 @@ settings specified in bf.cfg.
 .IP "--dump | -d"
 Instead of configuring the system, dump current configuration values.
 .IP "--part-info | -p"
-Configure and export partition information for install purposes, rather than
-performing a normal configuration. Used by
+Parse the partition configuration in
+.I /etc/bf.cfg
+and export variables $EFI_PART, $ROOT_PART, and $PERSIST_PART. Used by
 .BR bfpart (8)
 and
 .BR bfinst (8)
