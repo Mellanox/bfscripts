@@ -39,20 +39,39 @@ exit 0
 
 %install
 %global installdir %{buildroot}%{_bindir}
+%global man1dir %{buildroot}%{_mandir}/man1
+%global man8dir %{buildroot}%{_mandir}/man8
 mkdir -p %{installdir}
-install bfbootmgr  %{installdir}
-install bfcfg      %{installdir}
-install bfcpu-freq %{installdir}
-install bfdracut   %{installdir}
-install bffamily   %{installdir}
-install bfinst     %{installdir}
-install bfpxe      %{installdir}
-install bfrec      %{installdir}
-install bfsbkeys   %{installdir}
-install bfvcheck   %{installdir}
-install bfver      %{installdir}
+%{__install} -d %{man1dir}
+%{__install} -d %{man8dir}
 
-install mlx-mkbfb %{installdir}
+%{__install} bfbootmgr        %{installdir}
+%{__install} man/bfbootmgr.8  %{man8dir}
+%{__install} bfcfg            %{installdir}
+%{__install} man/bfcfg.8      %{man8dir}
+%{__install} bfcpu-freq       %{installdir}
+%{__install} man/bfcpu-freq.8 %{man8dir}
+%{__install} bfdracut         %{installdir}
+%{__install} man/bfdracut.8   %{man8dir}
+%{__install} bffamily         %{installdir}
+%{__install} man/bffamily.8   %{man8dir}
+%{__install} bfinst           %{installdir}
+%{__install} man/bfinst.8     %{man8dir}
+%{__install} bfpxe            %{installdir}
+%{__install} man/bfpxe.8      %{man8dir}
+%{__install} bfrec            %{installdir}
+%{__install} man/bfrec.8      %{man8dir}
+%{__install} bfsbkeys         %{installdir}
+%{__install} man/bfsbkeys.8   %{man8dir}
+%{__install} bfvcheck         %{installdir}
+%{__install} man/bfvcheck.8   %{man8dir}
+%{__install} bfver            %{installdir}
+%{__install} man/bfver.8      %{man8dir}
+%{__install} bfauxpwr         %{installdir}
+%{__install} man/bfauxpwr.8   %{man8dir}
+
+%{__install} mlx-mkbfb       %{installdir}
+%{__install} man/mlx-mkbfb.1 %{man1dir}
 
 mkdir -p %{buildroot}%{_unitdir}/
 install bfvcheck.service %{buildroot}%{_unitdir}/
@@ -72,7 +91,10 @@ systemctl daemon-reload
 %defattr(-,root,root)
 /usr/bin/bf*
 /usr/bin/mlx-mkbfb
-/usr/lib/systemd/system/bfvcheck.service
+%{_mandir}/man1/*
+%{_mandir}/man8/*
+%{_unitdir}/bfvcheck.service
+
 %doc README.md
 
 %changelog
