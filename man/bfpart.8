@@ -1,0 +1,46 @@
+.TH BFPART 8 "June 2020"
+.SH NAME
+bfpart \- Partition the eMMC for BlueField software installation
+.SH SYNOPSIS
+.B bfpart
+.RB [ \-b
+.IR MB ]
+.RB [ \-p
+.IR MB ]
+.RB [ \-o ]
+.SH DESCRIPTION
+Partitions the eMMC for BlueField software installation. This script assumes
+that no partition on the eMMC is mounted. The default partition layout is set
+on 
+.I /dev/mmcblk0
+as follows:
+.PP
+.RS
+- Partition 1 (/boot/efi): 150MB, FAT32 fs, efi system partition
+.br
+- Partition 2 (/): Expand to fit, ext4 fs, root file system
+.br
+- Partition 8 (/data): 250MB, ext4 fs, at end of disk
+.PP
+.RE
+Partition 8 is referred to as the "persistent" partition. When partitioning,
+if a persistent partition is identified on the disk, it will not be erased or
+moved by 
+.B bfpart
+or
+.BR bfinst (8)
+for the duration of the install process. Use the \-o option to destroy the
+persistent partition and recreate it. Note that this script is used by 
+.BR bfinst (8)
+and should generally not be called directly. 
+.PP
+.B Running this script will destroy data on the eMCC.
+.SH OPTIONS
+.IP "-b MB"
+Set the size of the EFI partition, in MB (default 150MB).
+.IP "-p MB"
+Set the size of the persistent partition.
+.IP "-o"
+Override the current persistent partition, if it exists. 
+.B This will destroy all data on the persistent partition.
+
