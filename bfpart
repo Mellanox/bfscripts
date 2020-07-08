@@ -46,7 +46,7 @@ default_cfg()
 
 bfcfg_scan()
 {
-  local disk_name part_size part_type part_persist part_mount
+  local disk_name part_size part_type part_persist part_mount part_type_tmp
   local disk_id part_uuid
   local disk_sectors sector sector_start
   local sector_start_reserve=2048 sector_end_reserve=33
@@ -70,9 +70,24 @@ bfcfg_scan()
       eval "part_size=\${DISK${disk}_PART${part}_SIZE}"
       eval "part_type=\${DISK${disk}_PART${part}_TYPE}"
       [ -z "${part_size}" -o -z "${part_type}" ] && continue
+
       part_type=$(echo $part_type | tr 'a-z' 'A-Z')
+
       eval "part_persist=\${DISK${disk}_PART${part}_PERSIST}"
       eval "part_mount=\${DISK${disk}_PART${part}_MOUNT}"
+
+      # Check if part_type was the NAME of the partition type.
+      # If so, continue. But if part_type has been replaced by
+      # the UUID of the partition, switch it back to the NAME
+      # of the partition type.
+
+      if [ "${part_type}" = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B" ]; then
+        part_type=EFI
+      elif [ "${part_type}" = "0FC63DAF-8483-4772-8E79-3D69D8477DE4" ]; then
+        part_type=LINUX
+      fi
+
+      # Evaluate and assign partition UUID information.
 
       if [ "${part_type}" = "EFI" ]; then
         part_type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
