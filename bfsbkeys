@@ -37,20 +37,20 @@ BF2_PLATFORM_ID=0x00000214
 mst_devs="/dev/mst/mt41682_pciconf0 /dev/mst/mt41686_pciconf0"
 
 for d in $mst_devs; do
-    if [ -e $d ]; then
+    if [ -e "$d" ]; then
         mst_device=$d
     fi
 done
 
 # Read chip version info from the CRSPACE
-bfversion=$(mcra $mst_device 0xf0014)
+bfversion=$(mcra "$mst_device" 0xf0014)
 
-if [ $bfversion == $BF1_PLATFORM_ID ]; then
+if [ "$bfversion" == $BF1_PLATFORM_ID ]; then
 	certversion=0
-elif [ $bfversion == $BF2_PLATFORM_ID ]; then
+elif [ "$bfversion" == $BF2_PLATFORM_ID ]; then
 	certversion=1
 else
-	echo "Unknown platform. Exiting.\n"
+	echo "Unknown platform. Exiting."
 	exit 1
 fi
 
@@ -83,14 +83,14 @@ declare -A certs=(["dump-bl2-cert-v$certversion"]="BL2 Public Key"
 nocert=1
 for i in "${!certs[@]}"
 do
-    if [ ! -e $i ]; then
+    if [ ! -e "$i" ]; then
         continue
     fi
 
     nocert=0
     echo -e "\n${certs[$i]}:"
     echo -e "\n\tModulus:"
-    openssl x509 -in $i -inform der -text > $TMP_FILE
+    openssl x509 -in "$i" -inform der -text > $TMP_FILE
     sed -e '1,/Modulus:/d' -e '/Exponent:/,$d' $TMP_FILE
     echo -e "\n\tExponent:"
     exp=$(sed -n -e 's/^.*Exponent: //p' $TMP_FILE | cut -d ' ' -f 1)

@@ -50,7 +50,7 @@ for family_name in "${!PRODUCT_FAMILY_MAP[@]}"
 do
     PN=$(echo "$PART_NUMBER" | grep -oE "${PRODUCT_FAMILY_MAP[$family_name]}" 2>/dev/null)
 
-    if [ ! -z "$PN" ]
+    if [ -n "$PN" ]
     then
         echo "$family_name"
         exit 0
