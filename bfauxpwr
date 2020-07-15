@@ -72,9 +72,9 @@ echo 441 > /sys/class/gpio/unexport
   if [ -f "$systemdconf" ]; then
     configexist=$(grep -c '^HandlePowerKey=ignore' $systemdconf)
     otherconfig=$(grep -c '^HandlePowerKey' $systemdconf)
-    if [ $configexist -ge 1 ]; then
+    if [ "$configexist" -ge 1 ]; then
       echo "Systemd config exists. Done."
-    elif [ $otherconfig -ge 1 ]; then
+    elif [ "$otherconfig" -ge 1 ]; then
       echo "Please remove systemd HandlePowerKey setting and try again."
     else
       echo "HandlePowerKey=ignore" >> $systemdconf
