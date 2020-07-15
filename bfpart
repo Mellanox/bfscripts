@@ -32,6 +32,8 @@ usage ()
     echo "syntax: bfpart [-b MB] [-p MB] [-o]"
 }
 
+# Note: These variables are eval'd further down.
+# shellcheck disable=SC2034
 default_cfg()
 {
   DISK0_NAME=/dev/mmcblk0
@@ -46,18 +48,22 @@ default_cfg()
 
 bfcfg_scan()
 {
-  local disk_name part_size part_type part_persist part_mount
-  local disk_id part_uuid
-  local disk_sectors sector sector_start
-  local sector_start_reserve=2048 sector_end_reserve=33
-  local total_sectors auto_part cur_persist_uuid
+  sector_start_reserve=2048
+  sector_end_reserve=33
+
+  # variables in use:
+  # disk_name part_size part_type part_persist part_mount disk_id part_uuid
+  # disk_sectors sector sector_start total_sectors auto_part cur_persist_uuid
+  #
+  # local would be used here, but local is not POSIX-compliant.
 
   # Support up to 16 disks and 16 partitions on each disk.
-  for disk in {0..15}; do
+  for disk in $(seq -s" " 0 15); do
     eval "disk_name=\${DISK${disk}_NAME}"
+    # shellcheck disable=SC2154
     [ -z "${disk_name}" ] && continue
 
-    disk_sectors=$(fdisk -l ${disk_name} | grep "Disk ${disk_name}:" | awk '{print $5}')
+    disk_sectors=$(fdisk -l "${disk_name}" | grep "Disk ${disk_name}:" | awk '{print $5}')
     disk_sectors=$((disk_sectors / 512))
     sector_start=${sector_start_reserve}
     total_sectors=$((sector_start_reserve + sector_end_reserve))
@@ -66,11 +72,11 @@ bfcfg_scan()
     eval "DISK${disk}_ID=$(uuidgen)"
     eval "DISK${disk}_START=${sector_start}"
 
-    for part in {0..15}; do
+    for part in $(seq -s" " 0 15); do
       eval "part_size=\${DISK${disk}_PART${part}_SIZE}"
       eval "part_type=\${DISK${disk}_PART${part}_TYPE}"
-      [ -z "${part_size}" -o -z "${part_type}" ] && continue
-      part_type=$(echo $part_type | tr 'a-z' 'A-Z')
+      [ -z "${part_size}" ] || [ -z "${part_type}" ] && continue
+      part_type=$(echo "$part_type" | tr '[:lower:]' '[:upper:]')
       eval "part_persist=\${DISK${disk}_PART${part}_PERSIST}"
       eval "part_mount=\${DISK${disk}_PART${part}_MOUNT}"
 
@@ -84,7 +90,7 @@ bfcfg_scan()
         fi
         if [ -n "${part_persist}" ]; then
           # Convert to upper case.
-          part_persist=$(echo $part_persist | tr 'a-z' 'A-Z')
+          part_persist=$(echo "$part_persist" | tr '[:lower:]' '[:upper:]')
           part_uuid=CAFDC47B-3F21-4A78-81CC-F91944081165
         else
           part_uuid=$(uuidgen)
@@ -93,11 +99,11 @@ bfcfg_scan()
 
       sector_num=$((part_size * 1024 * 1024 / 512))
 
-      cur_persist_uuid="$(sfdisk --part-uuid ${disk_name} ${part} || true)"
+      cur_persist_uuid="$(sfdisk --part-uuid "${disk_name}" "${part}" || true)"
       if [ ."${part_persist}" = ."KEEP" ]; then
         if [ ."${cur_persist_uuid}" = ."${part_uuid}" ]; then
-          sector_start="$(sfdisk -l ${disk_name} | grep ${disk_name}p${part} | awk '{print $2}')"
-          sector_num="$(sfdisk -l ${disk_name} | grep ${disk_name}p${part} | awk '{print $4}')"
+          sector_start="$(sfdisk -l "${disk_name}" | grep "${disk_name}p${part}" | awk '{print $2}')"
+          sector_num="$(sfdisk -l "${disk_name}" | grep "${disk_name}p${part}" | awk '{print $4}')"
         else
           eval "DISK${disk}_PART${part}_PERSIST=CREATE"
         fi
@@ -122,7 +128,7 @@ bfcfg_scan()
       exit 1
     fi
 
-    if [ $auto_part -ne 255 ]; then
+    if [ "$auto_part" -ne 255 ]; then
       part_size=$(((disk_sectors - total_sectors) * 512 / 1024 / 1024))
       eval "DISK${disk}_PART${auto_part}_SIZE=${part_size}"
     fi
@@ -131,11 +137,14 @@ bfcfg_scan()
 
 sfdisk_apply()
 {
-  local sector_start sector_end sector_num part_type part_uuid disk_id persist
+  # variables in use:
+  # sector_start sector_end sector_num part_type part_uuid disk_id persist
+  #
+  # local would be used here, but local is not POSIX-compliant.
 
   SFDISK_TMP_CFG=/tmp/disk.sfdisk
 
-  for disk in {0..15}; do
+  for disk in $(seq -s" " 0 15); do
     rm -f ${SFDISK_TMP_CFG}
 
     eval "disk_name=\${DISK${disk}_NAME}"
@@ -144,14 +153,18 @@ sfdisk_apply()
     eval "sector_start=\${DISK${disk}_START}"
     eval "sector_end=\${DISK${disk}_END}"
 
-    echo "label: gpt" >> ${SFDISK_TMP_CFG}
-    echo "label-id: ${disk_id}" >> ${SFDISK_TMP_CFG}
-    echo "device: ${disk_name}" >> ${SFDISK_TMP_CFG}
-    echo "unit: sectors" >> ${SFDISK_TMP_CFG}
-    echo "first-lba: ${sector_start}" >> ${SFDISK_TMP_CFG}
-    echo "last-lba: ${sector_end}" >> ${SFDISK_TMP_CFG}
+    {
+      echo "label: gpt"
+      # shellcheck disable=SC2154
+      echo "label-id: ${disk_id}"
+      echo "device: ${disk_name}"
+      echo "unit: sectors"
+      echo "first-lba: ${sector_start}"
+      # shellcheck disable=SC2154
+      echo "last-lba: ${sector_end}"
+    } >> ${SFDISK_TMP_CFG}
 
-    for part in {0..15}; do
+    for part in $(seq -s" " 0 15); do
       eval "part_type=\${DISK${disk}_PART${part}_TYPE}"
       eval "part_uuid=\${DISK${disk}_PART${part}_UUID}"
       eval "sector_start=\${DISK${disk}_PART${part}_SECTOR_START}"
@@ -159,7 +172,7 @@ sfdisk_apply()
       eval "persist=\${DISK${disk}_PART${part}_PERSIST}"
 
       if [ -n "${persist}" ]; then
-        persist=$(echo $persist | tr 'A-Z' 'a-z')
+        persist=$(echo "$persist" | tr '[:upper:]' '[:lower:]')
         echo "PERSIST: ${persist}"
       fi
 
@@ -168,8 +181,8 @@ sfdisk_apply()
       echo "gpt.dat${part} : start=${sector_start}, size=${sector_num}, type=${part_type}, uuid=${part_uuid}" >> ${SFDISK_TMP_CFG}
     done
 
-    dd if=/dev/zero of=${disk_name} bs=512 count=1
-    sfdisk ${disk_name} < /tmp/disk.sfdisk
+    dd if=/dev/zero of="${disk_name}" bs=512 count=1
+    sfdisk "${disk_name}" < /tmp/disk.sfdisk
   done
 }
 
@@ -195,12 +208,16 @@ while getopts ":b:p:o" opt; do
 done
 
 # Use default config if arguments are provided or config file doesn't exist.
-if [ "$#" -ne 0 -o ! -e "${BF_CFG_FILE}" ]; then
+if [ "$#" -ne 0 ] || [ ! -e "${BF_CFG_FILE}" ]; then
   default_cfg
+  # shellcheck disable=SC2034
   [ -n "${boot_size}" ] && DISK0_PART1_SIZE=${boot_size}
+  # shellcheck disable=SC2034
   [ -n "${persistent_size}" ] && DISK0_PART8_SIZE=${persistent_size}
+  # shellcheck disable=SC2034
   [ ."${override_persist}" = ."1" ] && DISK0_PART8_PERSIST=CREATE
 else
+  # shellcheck source=/dev/null
   . ${BF_CFG_FILE}
   [ -z "${DISK0_NAME}" ] && default_cfg
 fi
