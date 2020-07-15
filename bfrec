@@ -58,8 +58,7 @@ EOF
 bootctl_mode=
 capsule_mode=
 
-PARSED_OPTIONS=`getopt -n "$PROGNAME" -o h \
-                    -l help,bootctl,capsule -- "$@"`
+PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o h \ -l help,bootctl,capsule -- "$@")
 eval set -- "$PARSED_OPTIONS"
 
 while true
@@ -147,7 +146,7 @@ uefi_capsule_update()
     # UEFI will read the capsule image from the EFI System Partition.
     # Check whether an EFI System partition is present. If not, then
     # the capsule update is not supported;
-    if [ ! "$(fdisk -l | grep "EFI System")" ]; then
+    if ! fdisk -l | grep -q "EFI System" >/dev/null; then
         echo "cannot find EFI System Partition"
         exit 2
     fi
@@ -179,16 +178,16 @@ uefi_capsule_update()
     # Files in this directory will processed as capsules in alphabetical
     # order once the capsule flag is set in the 'OsIndications' variable
     # which is done by the printf command below.
-    $run mkdir -p $mount_efi/EFI/UpdateCapsule 2>/dev/null
-    $run cp $capsule_file $mount_efi/EFI/UpdateCapsule/$capsule_efi
+    $run mkdir -p "$mount_efi/EFI/UpdateCapsule" 2>/dev/null
+    $run cp $capsule_file "$mount_efi/EFI/UpdateCapsule/$capsule_efi"
     $run printf "\x07\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00" > \
         "${efivars}/${os_var}"
     $run sync
 
     # Doing some cleanup, if needed
     if [ -z "$esp_dir"  ]; then
-        $run umount $mount_efi
-        $run rmdir $mount_efi
+        $run umount "$mount_efi"
+        $run rmdir "$mount_efi"
         $run sync
         # Wait until eMMC internal cache is fully flushed
         $run sleep 3
@@ -214,7 +213,7 @@ kernel_bootctl_update()
 {
     bfb_device=/dev/mmcblk0
 
-    if [ ! $(which mlxbf-bootctl) ]; then
+    if ! command -v mlxbf-bootct >/dev/null; then
         echo "mlxbf-bootctl program is not supported"
         exit 2
     fi
@@ -258,7 +257,7 @@ if [ -n "$bootctl_mode" ] || [ -n "$capsule_mode" ]; then
     bfb_file=
     capsule_file=
     if [ $# -eq 1 ]; then
-        if [ ! -f $1 ]; then
+        if [ ! -f "$1" ]; then
 	    echo "cannot find file $1"
 	    exit 1
 	fi

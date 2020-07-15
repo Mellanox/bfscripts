@@ -16,8 +16,7 @@ BuildRequires: python3-devel
 BuildRequires: /usr/bin/pathfix.py
 
 Requires: mlxbf-bootctl
-# Note: mlxbf-bootimages is provided by mlxbf-aarch64-firmware on Fedora.
-Requires: mlxbf-bootimages
+Requires: mlxbf-aarch64-firmware
 Requires: bash
 Requires: python
 Requires: grub2-tools
@@ -89,8 +88,8 @@ systemctl daemon-reload
 
 %files
 %license LICENSE
-%{_bindir}/bf*
-%{_bindir}/mlx-mkbfb
+/usr/bin/bf*
+/usr/bin/mlx-mkbfb
 %attr(644, root, root) %{_mandir}/man1/*
 %attr(644, root, root) %{_mandir}/man8/*
 %attr(644, root, root) %{_unitdir}/bfvcheck.service

@@ -38,10 +38,10 @@ usage() {
 # For example, convert 255.255.255.0 to /24
 #
 netmask_to_prefix() {
-   c=0 x=0$(printf '%o' $(echo "$1" | sed -r 's/[\.]+/ /g'))
-   while [ $x -gt 0 ]; do
-     c=$(($c+$((x%2))))
-     x=$(($x/2))
+   c=0 x=0"$(printf '%o' "$(echo "$1" | sed -r 's/[\.]+/ /g')")"
+   while [ "$x" -gt 0 ]; do
+     c=$((c+$((x%2))))
+     x=$((x/2))
    done
    echo /$c
 }
@@ -52,7 +52,6 @@ netmask_to_prefix() {
 #
 create_net() {
   bfnet=""
-  is_vlan=0
   eval "$1"
 
   if [ -n "$bfnet" ]; then
@@ -61,17 +60,16 @@ create_net() {
     ifnet=$(echo $bfnet | cut -d: -f3)
 
     # vlan check
-    if [ ! -z $(echo "$ifname" | grep -E ".+\..+") ]; then
+    if echo "$ifname" | grep -q -E ".+\..+" >/dev/null; then
       vname=$(echo "$ifname" | cut -d. -f1)
       vid=$(echo "$ifname" | cut -d. -f2)
-      if [ -n "$vname" -a -n "$vid" ]; then
+      if [ -n "$vname" ] && [ -n "$vid" ]; then
         modprobe 8021q
         ip link add link "$vname" name "$ifname" type vlan id "$vid"
         ifconfig "$vname" 0.0.0.0 up
-        is_vlan=1
         if [ -n "$TMP_MNT" ]; then
           mkdir -p "$TMP_MNT"/etc/systemd/network 2>/dev/null
-          cat  >"$TMP_MNT"/etc/systemd/network/04-${ifname}.netdev <<EOF
+          cat  >"$TMP_MNT"/etc/systemd/network/04-"${ifname}".netdev <<EOF
 [NetDev]
 Name = $ifname
 Kind = vlan
@@ -79,13 +77,13 @@ Kind = vlan
 [VLAN]
 Id = $vid
 EOF
-          cat  >"$TMP_MNT"/etc/systemd/network/05-${ifname}.network <<EOF
+          cat  >"$TMP_MNT"/etc/systemd/network/05-"${ifname}".network <<EOF
 [Match]
 Name = $ifname
 
 [Network]
 EOF
-          echo "VLAN=${ifname}" >> "$TMP_MNT"/etc/systemd/network/05-${vname}.network
+          echo "VLAN=${ifname}" >> "$TMP_MNT"/etc/systemd/network/05-"${vname}".network
         fi
       fi
     fi
@@ -95,15 +93,15 @@ EOF
       ifconfig "$ifname" 0.0.0.0 up
       udhcpc -R -b -A 5 -T 3 -t 10 -i "$ifname"
       if [ -n "$TMP_MNT" ]; then
-        sed -i '/Address =/d' "$TMP_MNT"/etc/systemd/network/05-${ifname}.network
-        echo "DHCP = ipv4" >> "$TMP_MNT"/etc/systemd/network/05-${ifname}.network
+        sed -i '/Address =/d' "$TMP_MNT"/etc/systemd/network/05-"${ifname}".network
+        echo "DHCP = ipv4" >> "$TMP_MNT"/etc/systemd/network/05-"${ifname}".network
       fi
     else
       ifconfig "$ifname" "$ifaddr" ${ifnet:+netmask $ifnet} up
       if [ -n "$TMP_MNT" ]; then
-        sed -i '/DHCP =/d' "$TMP_MNT"/etc/systemd/network/05-${ifname}.network
-        echo "Address = ${ifaddr}${ifnet:+$(netmask_to_prefix $ifnet)}" \
-          >> "$TMP_MNT"/etc/systemd/network/05-${ifname}.network
+        sed -i '/DHCP =/d' "$TMP_MNT"/etc/systemd/network/05-"${ifname}".network
+        echo "Address = ${ifaddr}${ifnet:+$(netmask_to_prefix "$ifnet")}" \
+          >> "$TMP_MNT"/etc/systemd/network/05-"${ifname}".network
       fi
     fi
   fi
@@ -132,7 +130,7 @@ if [ -e "$root_device" ]; then
     TMP_MNT=
   else
     # Delete the default static IP address if bfnet is configured.
-    tmp=$(cat /proc/cmdline | grep bfnet)
+    tmp=$(grep bfnet /proc/cmdline)
     if [ -n "$tmp" ]; then
       sed -i '/Address =/d' $TMP_MNT/etc/systemd/network/05-tmfifo_net0.network
     fi
@@ -140,14 +138,16 @@ if [ -e "$root_device" ]; then
 fi
 
 # Parse kernel arguments.
+# Note: Disable check for reading lines, we are only reading words here.
+# shellcheck disable=SC2013
 for i in $(cat /proc/cmdline); do
   # Network config.
-  if [ $(echo "$i" | cut -c1-6) = "bfnet=" ]; then
+  if [ "$(echo "$i" | cut -c1-6)" = "bfnet=" ]; then
     create_net "$i"
   fi
 
   # Kickstart script.
-  if [ $(echo "$i" | cut -c1-5) = "bfks=" ]; then
+  if [ "$(echo "$i" | cut -c1-5)" = "bfks=" ]; then
     eval "$i"
   fi
 done
@@ -163,6 +163,7 @@ fi
 
 # Run the kickstart script.
 if [ -n "$bfks" ]; then
+  # shellcheck disable=SC2164
   cd /tmp; wget "$bfks"
   bfks=$(basename "$bfks")
   if [ -f "$bfks" ]; then
