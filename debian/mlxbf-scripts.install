@@ -1,3 +1,3 @@
-bfbootmgr bfcfg bfcpu-freq bfdracut bffamily bfinst bfmisc opt/mellanox/scripts/
-bfpart bfpxe bfrec bfsbkeys bfvcheck bfver build-bfb mlx-mkbfb opt/mellanox/scripts/
+bfauxpwr bfbootmgr bfcfg bfcpu-freq bfdracut bffamily bfinst usr/bin/
+bfpart bfpxe bfrec bfsbkeys bfvcheck bfver build-bfb mlx-mkbfb usr/bin/
 bfvcheck.service lib/systemd/system/
