@@ -74,11 +74,11 @@ mkdir -p %{installdir}
 %{__install} mlx-mkbfb       %{installdir}
 %{__install} man/mlx-mkbfb.1 %{man1dir}
 
-install -d %{buildroot}%{_unitdir}
-install bfvcheck.service %{buildroot}%{_unitdir}/
+%{__install} -d %{buildroot}%{_unitdir}
+%{__install} bfvcheck.service %{buildroot}%{_unitdir}/
 
-install -d %{buildroot}%{_presetdir}
-install 80-bfvcheck.preset %{buildroot}%{_presetdir}/
+%{__install} -d %{buildroot}%{_presetdir}
+%{__install} 80-bfvcheck.preset %{buildroot}%{_presetdir}/
 
 %post
 %systemd_post bfvcheck.service
