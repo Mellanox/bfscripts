@@ -4,14 +4,14 @@ Summary: Utility scripts for managing Mellanox BlueField hardware
 Name: mlxbf-bfscripts
 Version: 3.0.0~beta1
 URL: https://github.com/Mellanox/bfscripts
-Release: 1%{?dist}
+Release: 2%{?dist}
 License: BSD
 
 BuildArch: noarch
 
 Source: {{{ git_dir_pack dir_name=bfscripts source_name=mlxbf-bfscripts.tar.gz }}}
 
-BuildRequires: systemd
+BuildRequires: systemd-rpm-macros
 BuildRequires: python3-devel
 BuildRequires: /usr/bin/pathfix.py
 
@@ -26,6 +26,7 @@ Requires: efibootmgr
 Requires: pciutils
 Requires: util-linux
 Requires: binutils
+Requires: systemd
 
 %description
 Useful scripts for managing Mellanox BlueField hardware.
@@ -73,29 +74,37 @@ mkdir -p %{installdir}
 %{__install} mlx-mkbfb       %{installdir}
 %{__install} man/mlx-mkbfb.1 %{man1dir}
 
-mkdir -p %{buildroot}%{_unitdir}/
-install bfvcheck.service %{buildroot}%{_unitdir}/
+%{__install} -d %{buildroot}%{_unitdir}
+%{__install} bfvcheck.service %{buildroot}%{_unitdir}/
+
+%{__install} -d %{buildroot}%{_presetdir}
+%{__install} 80-bfvcheck.preset %{buildroot}%{_presetdir}/
 
 %post
-systemctl enable bfvcheck.service
-systemctl daemon-reload
-systemctl start bfvcheck.service >/dev/null 2>&1
+%systemd_post bfvcheck.service
 
 %preun
-systemctl stop bfvcheck.service >/dev/null 2>&1
-systemctl disable bfvcheck.service
-systemctl daemon-reload
+%systemd_preun bfvcheck.service
+
+%postun
+%systemd_postun bfvcheck.service
 
 %files
 %license LICENSE
-/usr/bin/bf*
-/usr/bin/mlx-mkbfb
+%{_bindir}/bf*
+%{_bindir}/mlx-mkbfb
 %attr(644, root, root) %{_mandir}/man1/*
 %attr(644, root, root) %{_mandir}/man8/*
 %attr(644, root, root) %{_unitdir}/bfvcheck.service
+%attr(644, root, root) %{_presetdir}/80-bfvcheck.preset
 
 %doc README.md
 
 %changelog
+* Tue Jul 21 2020 Spencer Lingard <spencer@nvidia.com> - 3.0.0~beta1-2
+- Use systemd macros for unit setup
+- Use preset file instead of enabling service manually
+- Fix Requires/BuildRequires
+
 * Wed Jul 1 2020 Spencer Lingard <spencer@nvidia.com> - 3.0.0~beta1-1
 Initial packaging.
