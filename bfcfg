@@ -345,7 +345,7 @@ boot_cfg_add_ipv6()
 #
 boot_cfg()
 {
-  local i tmp idx entry ifname proto mac vlan vlan_len
+  local i tmp idx entry ifname proto mac vlan vlan_len disk_entry_idx
   local shell_entry disk_entries boot_order
   local tmp_dir=/tmp/.boot_cfg
   local tmp_file=${tmp_dir}/boot
@@ -370,7 +370,6 @@ boot_cfg()
       shell_entry=$(efibootmgr 2>/dev/null | grep "EFI Internal Shell" | cut -c5-8)
       cp -f ${efivars}/Boot${shell_entry}* ${tmp_dir}/shell
     fi
-
   done
 
   # Don't continue if nothing configured.
@@ -393,7 +392,17 @@ boot_cfg()
     entry=$(echo ${entry} | tr '[:lower:]' '[:upper:]')
 
     # BOOT<N> = DISK
-    [ ."${entry}" = ."DISK" ] && continue
+    if [ ."${entry}" = ."DISK" ]; then
+      disk_entry_idx=64
+      for i in $disk_entries; do
+        tmp=$(printf '%04x' ${disk_entry_idx})
+        cp "${tmp_dir}/Boot${i}-${efi_global_var_guid}" "${efivars}/Boot${tmp}-${efi_global_var_guid}"
+        [ -n "${boot_order}" ] && boot_order="${boot_order},"
+        boot_order="${boot_order}${tmp}"
+        disk_entry_idx=$((disk_entry_idx + 1))
+      done
+      continue
+    fi
 
     # BOOT<N> = UEFI_SHELL
     if [ ."${entry}" = ."UEFI_SHELL" ]; then
@@ -457,10 +466,13 @@ boot_cfg()
   
       NIC_P0|NIC_P1)
         [ ! -d /dev/mst ] && mst start
-        mac=$(flint -d /dev/mst/mt41682_pciconf0 q | grep "^Base MAC" | awk '{print $3}')
-        if [ -z "${mac}" ]; then
-          log_msg "boot: failed to get MAC for ${entry}"
-          continue
+        mac=$(flint -d /dev/mst/mt41682_pciconf0 q 2>/dev/null | grep "^Base MAC" | awk '{print $3}')
+        if [ -z "${mac}" ] || [ ."${mac}" = ."N/A" ]; then
+          mac=$(flint -d /dev/mst/mt41686_pciconf0 q 2>/dev/null | grep "^Base MAC" | awk '{print $3}')
+          if [ -z "${mac}" ] || [ ."${mac}" = ."N/A" ]; then
+            log_msg "boot: failed to get MAC for ${entry}"
+            continue
+          fi
         fi
         mac="0x$(echo ${mac})"
         if [ "${ifname}" = "NIC_P0" ]; then
@@ -530,15 +542,7 @@ boot_cfg()
     fi 
   done
 
-  for i in $disk_entries; do
-    tmp=$(printf '%04x' ${idx})
-    cp ${tmp_dir}/Boot${i}-${efi_global_var_guid} ${efivars}/Boot${tmp}-${efi_global_var_guid}
-    [ -n "${boot_order}" ] && boot_order="${boot_order},"
-    boot_order="${boot_order}${tmp}"
-    idx=$((idx + 1))
-  done
-
-  efibootmgr -o ${boot_order} >/dev/null
+  efibootmgr -o "${boot_order}" >/dev/null
   log_msg "boot: set boot order ${boot_order}"
   rm -rf ${tmp_dir} 2>/dev/null
 }
