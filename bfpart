@@ -80,11 +80,12 @@ bfcfg_scan()
       eval "part_persist=\${DISK${disk}_PART${part}_PERSIST}"
       eval "part_mount=\${DISK${disk}_PART${part}_MOUNT}"
 
-      if [ "${part_type}" = "EFI" ]; then
+      # Evaluate and assign partition UUID information.
+      if [ "${part_type}" = "EFI" ] || [ "${part_type}" = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B" ]; then
         part_type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
         part_uuid=3DCADB7E-BCCC-4897-A766-3C070EDD7C25
       else
-        if [ "${part_type}" = "LINUX" ]; then
+        if [ "${part_type}" = "LINUX" ] || [ "${part_type}" = "0FC63DAF-8483-4772-8E79-3D69D8477DE4" ]; then
           part_type=0FC63DAF-8483-4772-8E79-3D69D8477DE4
         fi
         if [ -n "${part_persist}" ]; then
