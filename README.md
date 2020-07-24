@@ -20,4 +20,3 @@ Overview of each file:
 - **bfvcheck** Check whether software versions installed match those in current release.
 - **bfvcheck.service** Companion service to bfvcheck, runs bfvcheck at boot time.
 - **mlx-mkbfb** Builds and extracts BFB files.
-- **build-bfb** A simplifying wrapper for mlx-mkbfb.
