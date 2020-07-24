@@ -394,9 +394,9 @@ boot_cfg()
     # BOOT<N> = DISK
     if [ ."${entry}" = ."DISK" ]; then
       disk_entry_idx=64
-      for i in $disk_entries; do
+      for j in $disk_entries; do
         tmp=$(printf '%04x' ${disk_entry_idx})
-        cp "${tmp_dir}/Boot${i}-${efi_global_var_guid}" "${efivars}/Boot${tmp}-${efi_global_var_guid}"
+        cp "${tmp_dir}/Boot${j}-${efi_global_var_guid}" "${efivars}/Boot${tmp}-${efi_global_var_guid}"
         [ -n "${boot_order}" ] && boot_order="${boot_order},"
         boot_order="${boot_order}${tmp}"
         disk_entry_idx=$((disk_entry_idx + 1))
