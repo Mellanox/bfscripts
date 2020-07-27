@@ -133,8 +133,7 @@ uefi_capsule_update()
     uefi_ver=$(bfver | grep UEFI | cut -d':' -f2 | sed -e 's/[[:space:]]//')
     uefi_ver_major=$(echo $uefi_ver | cut -d'.' -f1)
 
-    num_re='^[0-9]+$'
-    if ! [[ ${uefi_ver_major} =~ $num_re ]]; then
+    if ! echo "${uefi_ver_major}" | grep -q '^[0-9]\+$'; then
         echo "UEFI Version unrecognized."
         exit_failure $1 $2
     fi
