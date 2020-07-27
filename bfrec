@@ -58,7 +58,7 @@ EOF
 bootctl_mode=
 capsule_mode=
 
-PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o h \ -l help,bootctl,capsule -- "$@")
+PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o h -l help,bootctl,capsule -- "$@")
 eval set -- "$PARSED_OPTIONS"
 
 while true
