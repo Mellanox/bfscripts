@@ -32,15 +32,81 @@ echo "Beginning version check..."
 # bfb file used to extract ATF/UEFI's expected version information
 BOOTIMG_LOCATION=/lib/firmware/mellanox/boot/default.bfb
 
-# find the firmware package on the system
-mlxfw=/opt/mellanox/mlnx-fw-updater/firmware/mlxfwmanager_sriov_dis_aarch64
+BASE_FW_NAME=mlxfwmanager_sriov_dis_aarch64
 
-if [ ! -f $mlxfw ]; then
-    # FW package not in /opt/mellanox, we're probably running on yocto
-    mlxfw=/lib/firmware/mellanox/mlxfwmanager_sriov_dis_aarch64
-fi
+# Set mlxfw filename based on current system, or
+set_mlxfw_name () {
+    if ! command -v mst >/dev/null; then
+        echo "bfvcheck: cannot find mst"
+        return 1
+    fi
 
-if [ ! -f $mlxfw ]; then
+    mst start
+    pciconf=$(find /dev/mst -name *_pciconf0 -exec basename {} \;)
+
+    if [ -z "$pciconf" ]; then
+        echo "bfvcheck: cannot find mst device"
+        return 1
+    fi
+
+    # Should replace with general solution later, but there are only
+    # two HW versions right now.
+    case $pciconf in
+        mt41682_pciconf0)
+            # BF1
+            chipnum=41682
+            ;;
+        mt41686_pciconf0)
+            # BF2
+            chipnum=41686
+            ;;
+        *)
+            echo "bfvcheck: cannot determine HW version"
+            return 1
+    esac
+
+    mlxfw_name="${BASE_FW_NAME}_${chipnum}"
+}
+
+# Finds the FW file on the system and sets $mlxfw accordingly.
+# Returns 1 if not found, 0 otherwise.
+find_fw_with_name () {
+    # find the firmware package on the system
+    mlxfw="/opt/mellanox/mlnx-fw-updater/firmware/${mlxfw_name}"
+
+    if [ -f $mlxfw ]; then
+        return 0
+    else
+        # FW package not in /opt/mellanox, we're probably running on yocto
+        mlxfw="/lib/firmware/mellanox/${mlxfw_name}"
+    fi
+
+    if [ -f $mlxfw ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+find_fw () {
+    if set_mlxfw_name; then
+        # If name set succeeds, we try once with the new name, and then if that
+        # doesn't work, continue to legacy check.
+        if find_fw_with_name; then
+            return 0
+        fi
+    fi
+
+    echo "bfvcheck: warning: falling back to legacy FW filename"
+    mlxfw_name="$BASE_FW_NAME"
+    if find_fw_with_name; then
+        return 0
+    fi
+
+    return 1
+}
+
+if ! find_fw; then
     # FW package not found anywhere, so error out fw check
     # We keep going to check bootloader versions anyway.
     echo "The firmware package could not be located."
