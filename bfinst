@@ -435,3 +435,6 @@ if [ -z "${skip_boot_update}" ]; then
     # from default option.
     bfrec --bootctl
 fi
+
+# Update configuration in case it's overwritten by bfinst
+bfcfg
