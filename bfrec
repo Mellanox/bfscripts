@@ -213,7 +213,7 @@ kernel_bootctl_update()
 {
     bfb_device=/dev/mmcblk0
 
-    if ! command -v mlxbf-bootct >/dev/null; then
+    if ! command -v mlxbf-bootctl >/dev/null; then
         echo "mlxbf-bootctl program is not supported"
         exit 2
     fi
