@@ -76,6 +76,8 @@ install -p bfver            %{installdir}
 install -p man/bfver.8      %{man8dir}
 install -p bfauxpwr         %{installdir}
 install -p man/bfauxpwr.8   %{man8dir}
+install -p bffindfw         %{installdir}
+install -p man/bffindfw.8   %{man8dir}
 
 install -p mlx-mkbfb       %{installdir}
 install -p man/mlx-mkbfb.1 %{man1dir}
