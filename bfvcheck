@@ -83,7 +83,7 @@ if [ $MLXFW_SUCCESS -eq 0 ]; then
 
     # If FW (Running) line exists, user updated firmware, but did
     # not power cycle, so output message further down
-    if [ ! -z "$(echo "\"$mlxfw_out\"" | grep 'FW *(Running)' )" ]; then
+    if echo "\"$mlxfw_out\"" | grep -q 'FW *(Running)' >/dev/null; then
         FW_UPDATED=yes
     fi
 else
