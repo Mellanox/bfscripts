@@ -31,7 +31,7 @@ Requires: binutils
 Useful scripts for managing Mellanox BlueField hardware.
 
 %prep
-%setup -q -n mlxbf-bfscripts
+%setup -q
 pathfix.py -pni "%{__python3} %{py3_shbang_opts}" mlx-mkbfb
 
 %build
