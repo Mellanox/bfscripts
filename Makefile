@@ -17,9 +17,9 @@ clean:
 RPMBUILD/SOURCES/$(TAR_NAME): $(GIT_FILES)
 	mkdir -p RPMBUILD/SOURCES
 	rm -rf git_dir_pack
-	mkdir -p git_dir_pack/bfscripts
-	rsync --relative $(GIT_FILES) git_dir_pack/bfscripts
-	(cd git_dir_pack; tar -zcvf ../$@ bfscripts)
+	mkdir -p git_dir_pack/mlxbf-bfscripts
+	rsync --relative $(GIT_FILES) git_dir_pack/mlxbf-bfscripts
+	(cd git_dir_pack; tar -zcvf ../$@ mlxbf-bfscripts)
 
 $(SRPM_NAME): RPMBUILD/SOURCES/$(TAR_NAME) bfscripts.spec
 	rpmbuild -bs --define "_topdir $(shell pwd)/RPMBUILD" bfscripts.spec
