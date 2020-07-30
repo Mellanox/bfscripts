@@ -1,8 +1,8 @@
 RPM_BASE:=$(shell \
-  rpmspec --query --qf "%{name}-%{version}-%{release}" bfscripts.spec)
+  rpmspec --query --qf "%{name}-%{version}-%{release}" mlxbf-bfscripts.spec)
 SRPM_NAME:=$(RPM_BASE).src.rpm
 TAR_BASE:=$(shell \
-  rpmspec --query --qf "%{name}-%{version}" bfscripts.spec)
+  rpmspec --query --qf "%{name}-%{version}" mlxbf-bfscripts.spec)
 TAR_NAME:=$(TAR_BASE).tar.gz
 GIT_FILES:=$(shell git ls-files -co --exclude-standard)
 
@@ -21,6 +21,6 @@ RPMBUILD/SOURCES/$(TAR_NAME): $(GIT_FILES)
 	rsync --relative $(GIT_FILES) git_dir_pack/$(TAR_BASE)
 	(cd git_dir_pack; tar -zcvf ../$@ $(TAR_BASE))
 
-$(SRPM_NAME): RPMBUILD/SOURCES/$(TAR_NAME) bfscripts.spec
-	rpmbuild -bs --define "_topdir $(shell pwd)/RPMBUILD" bfscripts.spec
+$(SRPM_NAME): RPMBUILD/SOURCES/$(TAR_NAME) mlxbf-bfscripts.spec
+	rpmbuild -bs --define "_topdir $(shell pwd)/RPMBUILD" mlxbf-bfscripts.spec
 	cp RPMBUILD/SRPMS/$(SRPM_NAME) ./
