@@ -9,7 +9,7 @@ License: BSD
 
 BuildArch: noarch
 
-Source: mlxbf-bfscripts.tar.gz
+Source: %{name}-%{version}.tar.gz
 
 BuildRequires: systemd
 BuildRequires: python3-devel
