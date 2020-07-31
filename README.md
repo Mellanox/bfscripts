@@ -11,7 +11,7 @@ Overview of each file:
 - **bfcpu-freq** Display Arm core frequency.
 - **bfdracut** Create an initramfs.
 - **bffamily** Display the BlueField family for the particular board.
-- **bffindfw** Print the path to the appropriate FW image for the current platform
+- **bfhcafw** Utilities for managing ConnectX firmware.
 - **bfinst** Simple installation script for both the bootloader and a root file
   system.
 - **bfpxe** PXE boot helper script.
