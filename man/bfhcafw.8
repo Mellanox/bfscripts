@@ -1,0 +1,20 @@
+.TH BFFINDFW 8 "July 2020"
+.SH NAME
+bfhcafw \- Utilities for BlueField ConnectX firmware
+.SH SYNOPSIS
+.B bfhcafw
+.RB [ \-\-help | \-h ]
+.PP
+.B bfhcafw
+find
+.SH DESCRIPTION
+A collection of utilities for managing ConnectX firmware on BlueField systems.
+The functionality of this utility is divided into commands, of which there is
+currently only one:
+.IP find
+Searches the filesystem for the ConnectX firmware distribution appropriate
+for the current BlueField hardware revision and linux distribution, and prints
+the absolute file path to stdout.
+.SH OPTIONS
+.IP "-h | --help"
+Print a short help message.
