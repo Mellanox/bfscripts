@@ -16,7 +16,8 @@ BuildRequires: python3-devel
 BuildRequires: /usr/bin/pathfix.py
 
 Requires: mlxbf-bootctl
-Requires: mlxbf-aarch64-firmware
+# Note: mlxbf-bootimages is provided by mlxbf-aarch64-firmware on Fedora.
+Requires: mlxbf-bootimages
 Requires: bash
 Requires: python
 Requires: grub2-tools
