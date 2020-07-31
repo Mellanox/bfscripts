@@ -27,8 +27,18 @@
 # of the authors and should not be interpreted as representing official policies,
 # either expressed or implied, of the FreeBSD Project.
 
+usage () {
+    cat >&2 <<EOF
+usage: bfhcafw [-h|--help] find
+
+Various utilities for ConnectX firmware on BlueField systems. Currently there
+is only one command: find, which searches the filesystem for the correct
+ConnectX firmware image for the current system and prints the full path to it.
+EOF
+}
+
 err () {
-    echo "bffindfw: $@" >&2
+    echo "bfhcafw: $@" >&2
 }
 
 BASE_FW_NAME=mlxfwmanager_sriov_dis_aarch64
@@ -72,43 +82,44 @@ set_mlxfw_name () {
 find_fw_with_name () {
     # find the firmware package on the system
     mlxfw="/opt/mellanox/mlnx-fw-updater/firmware/${mlxfw_name}"
+    [ -f $mlxfw ] && return 0
 
-    if [ -f $mlxfw ]; then
-        return 0
-    else
-        # FW package not in /opt/mellanox, we're probably running on yocto
-        mlxfw="/lib/firmware/mellanox/${mlxfw_name}"
-    fi
+    # FW package not in /opt/mellanox, we're probably running on yocto
+    mlxfw="/lib/firmware/mellanox/${mlxfw_name}"
+    [ -f $mlxfw ] && return 0
 
-    if [ -f $mlxfw ]; then
-        return 0
-    else
-        return 1
-    fi
+    return 1
 }
 
 find_fw () {
     if set_mlxfw_name; then
         # If name set succeeds, we try once with the new name, and then if that
         # doesn't work, continue to legacy check.
-        if find_fw_with_name; then
-            return 0
-        fi
+        find_fw_with_name && return 0
     fi
 
     err "warn: falling back to legacy FW filename"
     mlxfw_name="$BASE_FW_NAME"
-    if find_fw_with_name; then
-        return 0
-    fi
+    find_fw_with_name && return 0
 
     return 1
 }
 
-if find_fw; then
-    echo "$mlxfw"
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    usage
     exit 0
+fi
+
+if [ "$1" = "find" ]; then 
+    if find_fw; then
+        echo "$mlxfw"
+        exit 0
+    else
+        err "err: the firmware package could not be located"
+        exit 1
+    fi
 else
-    err "err: the firmware package could not be located"
+    err "err: unknown cmd"
+    usage
     exit 1
 fi

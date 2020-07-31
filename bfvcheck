@@ -32,7 +32,7 @@ echo "Beginning version check..."
 # bfb file used to extract ATF/UEFI's expected version information
 BOOTIMG_LOCATION=/lib/firmware/mellanox/boot/default.bfb
 
-mlxfw=$(bffindfw)
+mlxfw=$(bfhcafw find)
 
 if [ "$?" -ne 0 ]; then
     # FW package not found anywhere, so error out fw check
