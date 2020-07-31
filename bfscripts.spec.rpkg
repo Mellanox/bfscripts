@@ -89,8 +89,8 @@ systemctl daemon-reload
 
 %files
 %license LICENSE
-/usr/bin/bf*
-/usr/bin/mlx-mkbfb
+%{_bindir}/bf*
+%{_bindir}/mlx-mkbfb
 %attr(644, root, root) %{_mandir}/man1/*
 %attr(644, root, root) %{_mandir}/man8/*
 %attr(644, root, root) %{_unitdir}/bfvcheck.service
