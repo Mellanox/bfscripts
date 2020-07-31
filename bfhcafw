@@ -1,0 +1,125 @@
+#!/bin/sh -e
+
+# Copyright (c) 2020, Mellanox Technologies
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# The views and conclusions contained in the software and documentation are those
+# of the authors and should not be interpreted as representing official policies,
+# either expressed or implied, of the FreeBSD Project.
+
+usage () {
+    cat >&2 <<EOF
+usage: bfhcafw [-h|--help] find
+
+Various utilities for ConnectX firmware on BlueField systems. Currently there
+is only one command: find, which searches the filesystem for the correct
+ConnectX firmware image for the current system and prints the full path to it.
+EOF
+}
+
+err () {
+    echo "bfhcafw: $@" >&2
+}
+
+BASE_FW_NAME=mlxfwmanager_sriov_dis_aarch64
+
+# Set mlxfw filename based on current system
+set_mlxfw_name () {
+    if ! command -v mst >/dev/null; then
+        err "warn: cannot find mst"
+        return 1
+    fi
+
+    mst start 1>&2
+    pciconf=$(find /dev/mst -name *_pciconf0 -exec basename {} \;)
+
+    if [ -z "$pciconf" ]; then
+        err "warn: cannot find mst device"
+        return 1
+    fi
+
+    # Should replace with general solution later, but there are only
+    # two HW versions right now.
+    case $pciconf in
+        mt41682_pciconf0)
+            # BF1
+            chipnum=41682
+            ;;
+        mt41686_pciconf0)
+            # BF2
+            chipnum=41686
+            ;;
+        *)
+            err "warn: cannot determine HW version"
+            return 1
+    esac
+
+    mlxfw_name="${BASE_FW_NAME}_${chipnum}"
+}
+
+# Finds the FW file on the system and sets $mlxfw accordingly.
+# Returns 1 if not found, 0 otherwise.
+find_fw_with_name () {
+    # find the firmware package on the system
+    mlxfw="/opt/mellanox/mlnx-fw-updater/firmware/${mlxfw_name}"
+    [ -f $mlxfw ] && return 0
+
+    # FW package not in /opt/mellanox, we're probably running on yocto
+    mlxfw="/lib/firmware/mellanox/${mlxfw_name}"
+    [ -f $mlxfw ] && return 0
+
+    return 1
+}
+
+find_fw () {
+    if set_mlxfw_name; then
+        # If name set succeeds, we try once with the new name, and then if that
+        # doesn't work, continue to legacy check.
+        find_fw_with_name && return 0
+    fi
+
+    err "warn: falling back to legacy FW filename"
+    mlxfw_name="$BASE_FW_NAME"
+    find_fw_with_name && return 0
+
+    return 1
+}
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    usage
+    exit 0
+fi
+
+if [ "$1" = "find" ]; then 
+    if find_fw; then
+        echo "$mlxfw"
+        exit 0
+    else
+        err "err: the firmware package could not be located"
+        exit 1
+    fi
+else
+    err "err: unknown cmd"
+    usage
+    exit 1
+fi
