@@ -45,34 +45,21 @@ BASE_FW_NAME=mlxfwmanager_sriov_dis_aarch64
 
 # Set mlxfw filename based on current system
 set_mlxfw_name () {
-    if ! command -v mst >/dev/null; then
-        err "warn: cannot find mst"
-        return 1
+    if ! [ -e /sys/firmware/acpi/tables ]; then
+        err "fatal: cannot find acpi tables"
+        exit 1
     fi
 
-    mst start 1>&2
-    pciconf=$(find /dev/mst -name *_pciconf0 -exec basename {} \;)
-
-    if [ -z "$pciconf" ]; then
-        err "warn: cannot find mst device"
-        return 1
+    # Only two HW revs right now
+    # Figure out which rev by searching for an ACPI table that's only present
+    # on BF2
+    if hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF22; then
+        # BF2
+        chipnum=41686
+    else
+        # BF1
+        chipnum=41682
     fi
-
-    # Should replace with general solution later, but there are only
-    # two HW versions right now.
-    case $pciconf in
-        mt41682_pciconf0)
-            # BF1
-            chipnum=41682
-            ;;
-        mt41686_pciconf0)
-            # BF2
-            chipnum=41686
-            ;;
-        *)
-            err "warn: cannot determine HW version"
-            return 1
-    esac
 
     mlxfw_name="${BASE_FW_NAME}_${chipnum}"
 }
