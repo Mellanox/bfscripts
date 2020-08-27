@@ -6,13 +6,15 @@ TAR_BASE:=$(shell \
 TAR_NAME:=$(TAR_BASE).tar.gz
 GIT_FILES:=$(shell git ls-files -co --exclude-standard)
 
-.PHONY: all clean
-all: $(SRPM_NAME)
+.PHONY: all clean srpm
+all:
 
 clean:
-	rm -r RPMBUILD
-	rm -r git_dir_pack
+	rm -rf RPMBUILD
+	rm -rf git_dir_pack
 	rm -f mlxbf-bfscripts*.src.rpm
+
+srpm: $(SRPM_NAME)
 
 RPMBUILD/SOURCES/$(TAR_NAME): $(GIT_FILES)
 	mkdir -p RPMBUILD/SOURCES
