@@ -1,0 +1,15 @@
+man/bfpxe.8
+man/bfrec.8
+man/bfauxpwr.8
+man/bffamily.8
+man/bfcpu-freq.8
+man/bfcfg.8
+man/bfsbkeys.8
+man/bfinst.8
+man/bfbootmgr.8
+man/bfhcafw.8
+man/bfver.8
+man/mlx-mkbfb.1
+man/bfpart.8
+man/bfdracut.8
+man/bfvcheck.8
