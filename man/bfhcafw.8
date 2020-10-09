@@ -10,6 +10,9 @@ find
 .PP
 .B bfhcafw
 flint FLINT_ARGS
+.PP
+.B bfhcafw
+mcra MCRA_ARGS
 .SH DESCRIPTION
 A collection of utilities for managing ConnectX interfaces on BlueField
 systems. The functionality of this utility is divided into commands:
@@ -21,6 +24,10 @@ the absolute file path to stdout.
 Automatically picks the mstflint executable and PCI device path to run
 flint. Automatically selects the -d argument based on platform, all other
 arguments are passed to flint.
+.IP mcra FLINT_ARGS
+Automatically picks the mstmcra executable and PCI device path to run
+mcra. Automatically selects the device argument based on platform, all other
+arguments are passed to mcra.
 .SH OPTIONS
 .IP "-h | --help"
 Print a short help message.
