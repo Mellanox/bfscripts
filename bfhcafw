@@ -45,6 +45,9 @@ flint   Automatically selects the correct flint binary, and passes in the PCI
         is equivalent to:
 
         (mst)flint -d <BF1 or BF2 PCI path> query
+
+mcra    Similar to flint, automatically selects binary and PCI conf path to
+        run mcra.
 EOF
 }
 
@@ -121,12 +124,34 @@ find_flint () {
     fi
 }
 
+find_mcra () {
+    if command -v mstmcra >/dev/null; then
+        echo mstmcra
+    elif command -v mcra >/dev/null; then
+        echo mcra
+    else
+        err "err: cannot find mcra executable"
+        exit 1
+    fi
+}
+
 get_pci_path () {
-    echo $(lspci | grep '00\.0.*BlueField.*ConnectX' | cut -f1 -d' ')
+    pci_path="$(lspci | grep '00\.0.*BlueField.*ConnectX' | cut -f1 -d' ')"
+
+    if [ -z "$pci_path" ]; then
+        err "err: cannot get PCI path in livefish mode"
+        exit 1
+    fi
+
+    echo $pci_path
 }
 
 run_flint () {
     $(find_flint) -d $(get_pci_path) $@
+}
+
+run_mcra () {
+    $(find_mcra) $(get_pci_path) $@
 }
 
 if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
@@ -145,6 +170,9 @@ if [ "$1" = "find" ]; then
 elif [ "$1" = "flint" ]; then
     shift
     run_flint $@
+elif [ "$1" = "mcra" ]; then
+    shift
+    run_mcra $@
 else
     err "err: unknown cmd"
     usage

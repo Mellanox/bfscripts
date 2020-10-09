@@ -31,39 +31,18 @@
 # Read the core PLL register to calculate the core clock frequency
 #
 
-if [ ! -d /dev/mst ]; then
-	mst start
-fi
-
 BF1_PLATFORM_ID=0x00000211
 BF2_PLATFORM_ID=0x00000214
 
-mst_devs="/dev/mst/mt41682_pciconf0 /dev/mst/mt41686_pciconf0"
-
-for d in $mst_devs; do
-    if [ -e "$d" ]; then
-        mst_device=$d
-    fi
-done
-
-if [ -z "$mst_device" ]; then
-    if [ -e /dev/mst/bf-livefish ]; then
-        echo "Can not read core frequency in livefish mode"
-    else
-        echo "No BlueField MST device found"
-    fi
-    exit 1
-fi
-
-bfversion=$(mcra "$mst_device" 0xf0014.0:16)
+bfversion=$(bfhcafw mcra 0xf0014.0:16)
 
 padfreq=156.25 # MHz
 
 if [ "$bfversion" = $BF1_PLATFORM_ID ]; then
 
-	F=$(($(mcra "$mst_device" 0x1c0384.3:13)))
-	R=$(($(mcra "$mst_device" 0x1c0384.20:6)))
-	OD=$(($(mcra "$mst_device" 0x1c0384.16:4)))
+	F=$(($(bfhcafw mcra 0x1c0384.3:13)))
+	R=$(($(bfhcafw mcra 0x1c0384.20:6)))
+	OD=$(($(bfhcafw mcra 0x1c0384.16:4)))
 
 	# F= padfreq*(F+1)/((R+1)*(OD+1))
 	freq=$(echo "$F 1 + $padfreq * $R 1 + / $OD 1 + / p"  | dc)
@@ -72,9 +51,9 @@ if [ "$bfversion" = $BF1_PLATFORM_ID ]; then
 
 elif [ "$bfversion" = $BF2_PLATFORM_ID ]; then
 
-	F=$(($(mcra "$mst_device" 0xf0f90.0:26)))
-	R=$(($(mcra "$mst_device" 0xf0f90.26:6)))
-	OD=$(($(mcra "$mst_device" 0xf0f94.0:4)))
+	F=$(($(bfhcafw mcra 0xf0f90.0:26)))
+	R=$(($(bfhcafw mcra 0xf0f90.26:6)))
+	OD=$(($(bfhcafw mcra 0xf0f94.0:4)))
 
 	# F= padfreq*(F/16384)/(R+1)/(OD+1)
 	freq=$(echo "$F $padfreq * 16384 / $R 1 + / $OD 1 + / p"  | dc)
