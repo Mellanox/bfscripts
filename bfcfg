@@ -472,14 +472,10 @@ boot_cfg()
         ;;
 
       NIC_P0|NIC_P1)
-        [ ! -d /dev/mst ] && mst start
-        mac=$(flint -d /dev/mst/mt41682_pciconf0 q 2>/dev/null | grep "^Base MAC" | awk '{print $3}')
+        mac=$(bfhcafw flint q 2>/dev/null | grep "^Base MAC" | awk '{print $3}')
         if [ -z "${mac}" ] || [ ."${mac}" = ."N/A" ]; then
-          mac=$(flint -d /dev/mst/mt41686_pciconf0 q 2>/dev/null | grep "^Base MAC" | awk '{print $3}')
-          if [ -z "${mac}" ] || [ ."${mac}" = ."N/A" ]; then
-            log_msg "boot: failed to get MAC for ${entry}"
-            continue
-          fi
+          log_msg "boot: failed to get MAC for ${entry}"
+          continue
         fi
         mac="0x${mac}"
         if [ "${ifname}" = "NIC_P0" ]; then

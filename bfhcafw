@@ -29,11 +29,22 @@
 
 usage () {
     cat >&2 <<EOF
-usage: bfhcafw [-h|--help] find
+usage: bfhcafw [-h|--help] [find | flint <FLINT_ARGS...>]
 
-Various utilities for ConnectX firmware on BlueField systems. Currently there
-is only one command: find, which searches the filesystem for the correct
-ConnectX firmware image for the current system and prints the full path to it.
+Various utilities for ConnectX interface on BlueField systems. Supports the
+following commands:
+
+find    Searches the filesystem for the correct ConnectX firmware image for
+        the current system and prints the full path to it.
+
+flint   Automatically selects the correct flint binary, and passes in the PCI
+        device path for the ConnectX interface.
+
+        bfhcafw flint query
+
+        is equivalent to:
+
+        (mst)flint -d <BF1 or BF2 PCI path> query
 EOF
 }
 
@@ -43,8 +54,10 @@ err () {
 
 BASE_FW_NAME=mlxfwmanager_sriov_dis_aarch64
 
-# Set mlxfw filename based on current system
-set_mlxfw_name () {
+CHIPNUM_BF1=41682
+CHIPNUM_BF2=41686
+
+get_chipnum () {
     if ! [ -e /sys/firmware/acpi/tables ]; then
         err "fatal: cannot find acpi tables"
         exit 1
@@ -61,7 +74,12 @@ set_mlxfw_name () {
         chipnum=41682
     fi
 
-    mlxfw_name="${BASE_FW_NAME}_${chipnum}"
+    echo $chipnum
+}
+
+# Set mlxfw filename based on current system
+set_mlxfw_name () {
+    mlxfw_name="${BASE_FW_NAME}_$(get_chipnum)"
 }
 
 # Finds the FW file on the system and sets $mlxfw accordingly.
@@ -92,6 +110,25 @@ find_fw () {
     return 1
 }
 
+find_flint () {
+    if command -v mstflint >/dev/null; then
+        echo mstflint
+    elif command -v flint >/dev/null; then
+        echo flint
+    else
+        err "err: cannot find flint executable"
+        exit 1
+    fi
+}
+
+get_pci_path () {
+    echo $(lspci | grep '00\.0.*BlueField.*ConnectX' | cut -f1 -d' ')
+}
+
+run_flint () {
+    $(find_flint) -d $(get_pci_path) $@
+}
+
 if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     usage
     exit 0
@@ -105,6 +142,9 @@ if [ "$1" = "find" ]; then
         err "err: the firmware package could not be located"
         exit 1
     fi
+elif [ "$1" = "flint" ]; then
+    shift
+    run_flint $@
 else
     err "err: unknown cmd"
     usage
