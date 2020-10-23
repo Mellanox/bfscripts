@@ -433,7 +433,7 @@ if [ -z "${skip_boot_update}" ]; then
     # MUST be executed after 'install_grub', otherwise the newly
     # created boot option would be either cleaned up or unset
     # from default option.
-    bfrec --bootctl
+    bfrec
 fi
 
 # Update configuration in case it's overwritten by bfinst
