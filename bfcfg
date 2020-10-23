@@ -357,11 +357,14 @@ boot_cfg()
   local tmp_dir=/tmp/.boot_cfg
   local tmp_file=${tmp_dir}/boot
   local tmp_vlan_file=${tmp_dir}/vlan
+  local value tmp_entry old_boot_order
 
   [ $dump_mode -eq 1 ] && return
 
   rm -rf ${tmp_dir} 2>/dev/null
   mkdir -p ${tmp_dir}
+
+  old_boot_order=$(efibootmgr 2>/dev/null | grep BootOrder | awk '{print $2}' | tr ',' ' ')
 
   # Check whether to preserve booting entries from disk.
   for i in {0..32}; do
@@ -370,7 +373,12 @@ boot_cfg()
     [ -n "${entry}" ] && tmp=${entry}
 
     if [ "${entry}" = "DISK" ]; then
-      disk_entries=$(efibootmgr -v 2>/dev/null | grep "^Boot0" | grep -w HD | cut -c5-8)
+      for tmp_entry in ${old_boot_order}; do
+        value=$(efibootmgr -v 2>/dev/null | grep "^Boot${tmp_entry}\*" | grep -w HD)
+        if [ -n "${value}" ]; then
+          disk_entries="${disk_entries} ${tmp_entry}"
+        fi
+      done
       break
     elif [ "${entry}" = "UEFI_SHELL" ]; then
       # Save the UEFI shell option
@@ -483,7 +491,7 @@ boot_cfg()
         else
           mac=$((mac + 5))
         fi
-        mac=$(printf '%08x' ${mac})
+        mac=$(printf '%012x' ${mac})
         # shellcheck disable=SC2116,SC2096,SC2086
         mac=$(echo ${mac:0:2}:${mac:2:2}:${mac:4:2}:${mac:6:2}:${mac:8:2}:${mac:10:2})
   
