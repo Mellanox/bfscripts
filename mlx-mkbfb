@@ -101,7 +101,7 @@ rev_image_table = dict([(z, (x, y)) for (x, y, z) in image_list])
 verbose = False
 
 # Maximum allowed image version number (inclusive)
-MAX_VER = 1
+MAX_VER = 2
 
 MAJOR_VER = 1
 MINOR_VER = 2
