@@ -1,0 +1,14 @@
+.TH BFRSHLOG 8 "June 2020"
+.SH NAME
+bfrshlog \- Write message into the rshim logging buffer
+.SH SYNOPSIS
+.B bfrshlog
+[INFO:|WARN:|ERR:]<message>
+.SH DESCRIPTION
+Write a message into the rshim logging buffer which is a HW buffer and can
+be displayed from external host by the rshim driver. The message can specify
+an optional level of INFO, WARN or ERR. If not specified, it'll use INFO as
+the default level.
+.SH OPTIONS
+.B bfrshlog
+accepts no options.
