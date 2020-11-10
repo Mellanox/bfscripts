@@ -68,6 +68,8 @@ install -p bfpxe            %{installdir}
 install -p man/bfpxe.8      %{man8dir}
 install -p bfrec            %{installdir}
 install -p man/bfrec.8      %{man8dir}
+install -p bfrshlog         %{installdir}
+install -p man/bfrshlog.8   %{man8dir}
 install -p bfsbkeys         %{installdir}
 install -p man/bfsbkeys.8   %{man8dir}
 install -p bfvcheck         %{installdir}
