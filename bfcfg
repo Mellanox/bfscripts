@@ -48,6 +48,7 @@ log_msg()
 
 mfg_cfg()
 {
+  local tmp_file=/tmp/.bfcfg-mfg-data
   local opn_str_sysfs=/sys/bus/platform/drivers/mlx-bootctl/opn_str
   local oob_efi_mac_sysfs=${efivars}/OobMacAddr-${efi_global_var_guid}
   local mac_err opn_err mac
@@ -75,10 +76,15 @@ mfg_cfg()
     fi
 
     # Update the MAC address in UEFI variable.
+    # Somehow 'printf' into the sysfs file doesn't always work, probably
+    # due to length check of each write. A temporary file is used here
+    # to workaround such issue.
     mac="${MFG_OOB_MAC//:/\\x}"
     mac="\\x07\\x00\\x00\\x00\\x${mac}"
+    printf "${mac}" > ${tmp_file}
     chattr -i ${oob_efi_mac_sysfs} 2>/dev/null
-    printf "${mac}" > ${oob_efi_mac_sysfs}
+    cp ${tmp_file} ${oob_efi_mac_sysfs}
+    rm -f ${tmp_file}
   else
     log_msg "mfg: skip"
   fi
@@ -128,7 +134,7 @@ sys_cfg_one_byte()
 #
 sys_cfg()
 {
-  local tmp_file=/tmp/.sysfs-data
+  local tmp_file=/tmp/.bfcfg-sysfs-data
   local sys_cfg_sysfs=${efivars}/BfSysCfg-9c759c02-e5a3-45e4-acfc-c34a500628a6
 
   if [ $dump_mode -eq 0 ] && [ ! -e "${sys_cfg_sysfs}" ]; then
@@ -161,6 +167,7 @@ misc_cfg()
 {
   # Rshim MAC address.
   local mac
+  local tmp_file=/tmp/.bfcfg-misc-data
 
   if [ $dump_mode -eq 1 ]; then
     mac=$(hexdump -v -e '/1 "%02x"' ${rshim_efi_mac_sysfs})
@@ -169,8 +176,10 @@ misc_cfg()
   elif [ -n "${NET_RSHIM_MAC}" ]; then
     mac="${NET_RSHIM_MAC//:/\\x}"
     mac="\\x07\\x00\\x00\\x00\\x${mac}"
+    printf "${mac}" > ${tmp_file}
     chattr -i ${rshim_efi_mac_sysfs}
-    printf "${mac}" > ${rshim_efi_mac_sysfs}
+    cp ${tmp_file} ${rshim_efi_mac_sysfs}
+    rm -f ${tmp_file}
     log_msg "misc: NET_RSHIM_MAC=${NET_RSHIM_MAC}"
   fi
 }
