@@ -60,7 +60,7 @@ elif [ "$bfversion" = $BF2_PLATFORM_ID ]; then
         ["Arcadia OCP 3.0"]="MBF2M(922|912)A"
         ["Asgard"]="MBF2H51(5|6)B"
         ["BlueForce"]="BLUEFORCE_IPN"
-        ["BlueSphere"]="(MBF2M512A|BS2M512A)"
+        ["BlueSphere"]="(MBS2M512A|BS2M512A)"
     )
     BUS_NUMBER=$(lspci | grep -E "Mellanox.+MT42822\s+BlueField.+ConnectX-6" | grep -m 1 -oE "[0-9]{2}:[0-9]{2}.[0-9]")
     PART_NUMBER=$(flint -d $BUS_NUMBER dc | grep -m1 "name =" | cut -f 3 -d " ")
