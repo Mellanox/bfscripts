@@ -334,7 +334,7 @@ if [ -n "${full_root}" ]; then
     if [ "${fspath}" = "${bootfifo_rootfs_file}" ]; then
       ${ECHO} "boot: wait for decompression"
       # shellcheck disable=SC2034
-      for i in $(seq -s" " 600); do
+      for i in $(seq -s" " 900); do
         [ -f "${bootfifo_rootfs_file}_done" ] && break
         sleep 1
       done
