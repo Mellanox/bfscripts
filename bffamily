@@ -47,8 +47,7 @@ if [ "$bfversion" = $BF1_PLATFORM_ID ]; then
         ["Poondion"]="MBF1M706A-CSNAT_C15"
         ["Poondion BF1700"]="MBF1M716A-CSNAT"
     )
-    BUS_NUMBER=$(lspci | grep -E "Mellanox.+MT416842\s+BlueField.+ConnectX-5" | grep -m 1 -oE "[0-9]{2}:[0-9]{2}.[0-9]")
-    PART_NUMBER=$(lspci -s "$BUS_NUMBER" -vv | grep PN)
+    PART_NUMBER=$(lspci -s "$(bfhcafw bus)" -vv | grep PN)
 
 elif [ "$bfversion" = $BF2_PLATFORM_ID ]; then
 
@@ -62,8 +61,7 @@ elif [ "$bfversion" = $BF2_PLATFORM_ID ]; then
         ["BlueForce"]="BLUEFORCE_IPN"
         ["BlueSphere"]="(MBS2M512A|BS2M512A)"
     )
-    BUS_NUMBER=$(lspci | grep -E "Mellanox.+MT42822\s+BlueField.+ConnectX-6" | grep -m 1 -oE "[0-9]{2}:[0-9]{2}.[0-9]")
-    PART_NUMBER=$(flint -d $BUS_NUMBER dc | grep -m1 "name =" | cut -f 3 -d " ")
+    PART_NUMBER=$(bfhcafw flint dc | grep -m1 "name =" | cut -f 3 -d " ")
 else
     echo "Unknown platform"
     exit 1
