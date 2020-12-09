@@ -29,7 +29,11 @@
 
 usage () {
     cat >&2 <<EOF
-usage: bfhcafw [-h|--help] [find | flint <FLINT_ARGS...>]
+usage: bfhcafw [-h|--help]
+       bfhcafw find
+       bfhcafw flint <FLINT ARGS...>
+       bfhcafw mcra <MCRA ARGS...>
+       bfhcafw bus
 
 Various utilities for ConnectX interface on BlueField systems. Supports the
 following commands:
@@ -48,6 +52,8 @@ flint   Automatically selects the correct flint binary, and passes in the PCI
 
 mcra    Similar to flint, automatically selects binary and PCI conf path to
         run mcra.
+
+bus     Prints the PCI bus number for the ConnectX interface.
 EOF
 }
 
@@ -173,6 +179,9 @@ elif [ "$1" = "flint" ]; then
 elif [ "$1" = "mcra" ]; then
     shift
     run_mcra $@
+elif [ "$1" = "bus" ]; then
+    shift
+    echo $(get_pci_path)
 else
     err "err: unknown cmd"
     usage
