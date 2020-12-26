@@ -205,6 +205,10 @@ menuentry "Yocto from eMMC" {
         linux (\$root)/Image $bootarg
 }
 
+menuentry "Yocto from eMMC (kdump)" {
+        linux (\$root)/Image $bootarg crashkernel=0M-2G:128M,2G-6G:256M,6G-8G:512M,8G-:768M systemd.wants=kdump
+}
+
 # Yocto rescue
 menuentry "Rescue from eMMC" {
         linux (\$root)/Image $rescue_bootarg
