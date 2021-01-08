@@ -74,8 +74,8 @@ install -p bfvcheck         %{installdir}
 install -p man/bfvcheck.8   %{man8dir}
 install -p bfver            %{installdir}
 install -p man/bfver.8      %{man8dir}
-install -p bfauxpwr         %{installdir}
-install -p man/bfauxpwr.8   %{man8dir}
+install -p bfacpievt        %{installdir}
+install -p man/bfacpievt.8  %{man8dir}
 install -p bfhcafw          %{installdir}
 install -p man/bfhcafw.8    %{man8dir}
 install -p bfrshlog         %{installdir}
