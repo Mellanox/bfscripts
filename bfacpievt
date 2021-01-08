@@ -32,11 +32,11 @@
 usage()
 {
   cat <<EOF
-Usage: $0 [--help] [--update-acpi]
+Usage: $0 [--help] [--update-low-pwr] [--update-reset]
 EOF
 }
 
-update_acpi()
+update_low_pwr()
 {
   powerconf=/etc/acpi/events/powerconf
   powercontrol=/etc/acpi/actions/powercontrol
@@ -85,6 +85,47 @@ echo 441 > /sys/class/gpio/unexport
   fi
 }
 
+update_reset()
+{
+  powerconf=/etc/acpi/events/powerconf
+  powercontrol=/etc/acpi/actions/powercontrol
+  systemdconf=/etc/systemd/logind.conf
+
+  mkdir -p /etc/acpi/events
+  echo \
+"event=button/power.*
+action=$powercontrol
+" > $powerconf
+
+  mkdir -p /etc/acpi/actions
+  echo \
+"#!/bin/bash
+
+reboot
+" > $powercontrol
+
+  chmod +x $powercontrol
+
+  systemctl restart acpid
+
+  echo "Acpid config updated."
+
+  if [ -f "$systemdconf" ]; then
+    configexist=$(grep -c '^HandlePowerKey=ignore' $systemdconf)
+    otherconfig=$(grep -c '^HandlePowerKey' $systemdconf)
+    if [ "$configexist" -ge 1 ]; then
+      echo "Systemd config exists. Done."
+    elif [ "$otherconfig" -ge 1 ]; then
+      echo "Please remove systemd HandlePowerKey setting and try again."
+    else
+      echo "HandlePowerKey=ignore" >> $systemdconf
+      echo "Systemd config has been updated. Please reboot the system."
+    fi
+  else
+    echo "Please check systemd config file if HandlePowerKey is set to ignore."
+  fi
+}
+
 while true
 do
   case $1 in
@@ -92,8 +133,12 @@ do
           usage
           exit 0
           ;;
-      --update-acpi)
-          update_acpi
+      --update-low-pwr)
+          update_low_pwr
+          exit 0
+          ;;
+      --update-reset)
+          update_reset
           exit 0
           ;;
       *)
