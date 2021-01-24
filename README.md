@@ -11,6 +11,7 @@ Overview of each file:
 - **bfcpu-freq** Display Arm core frequency.
 - **bfdracut** Create an initramfs.
 - **bffamily** Display the BlueField family for the particular board.
+- **bfgrubcheck** Checks if default grub password needs to be changed.
 - **bfhcafw** Utilities for managing ConnectX interfaces on BlueField.
 - **bfinst** Simple installation script for both the bootloader and a root file
   system.
