@@ -40,20 +40,14 @@ COMMAND list:
     --help                          : print help.
     --add <DISTRO> <KERNEL> <ARGS>  : create a new boot entry.
     --cleanall                      : delete all boot entires.
-    --force <shell|pxe|default> [p] : boot override; if 'p' is
-                                      used then the boot order
-                                      would be persistent across
-                                      reboots.
 EOF
 }
 
 add=
 cleanall=
-force=
 option=0
 
-PARSED_OPTIONS=`getopt -n "$PROGNAME" -o h \
-                    -l help,add,cleanall,force -- "$@"`
+PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o h -l help,add,cleanall -- "$@")
 eval set -- "$PARSED_OPTIONS"
 
 while true
@@ -65,17 +59,12 @@ do
           ;;
       -a | --add)
           add=1
-          option=$(($option+1))
+          option=$((option+1))
           shift
           ;;
       -c | --cleanall)
           cleanall=1
-          option=$(($option+1))
-          shift
-          ;;
-      -f | --force)
-          force=1
-          option=$(($option+1))
+          option=$((option+1))
           shift
           ;;
       --)
@@ -149,51 +138,12 @@ boot_add()
     efibootmgr -c -d $disk -p $part -l "$kernel" -L "$distro" -u "$bootargs"
 }
 
-boot_override()
-{
-    cd $efivars
-
-    # Read parameters
-    select="$1"
-    persist="$2"
-
-    # Set the BlueField boot override variable.
-    # The efivarfs (EFI VARiable File System) contains files whose names are
-    # built from the UEFI variables name and GUID. All architecturally defined
-    # variables use the EFI_GLOBAL_VARIABLE GUID
-    # 0x8BE4DF61,0x93CA,0x11D2,0xAA,0xOD,0x00,0xE0,0x98,0x03,0x2B,0x8C.
-    var=BfBootOverride-8be4df61-93ca-11d2-aa0d-00e098032b8c
-
-    [[ -e "$var" ]] && chattr -i $var
-
-    if [ "$select" == "pxe" ]; then
-        data="01"
-    elif [ "$select" == "shell" ]; then
-        data="02"
-    elif [ "$select" == "default" ]; then
-        [[ -e "$var" ]] && (echo "Deleting $var"; rm $var)
-        exit 0
-    else
-        echo "Bad Boot Selection $select!"
-        return 1
-    fi
-
-    if [ -n "$persist" ]; then
-        data="$data\x01"
-    else
-        data="$data\x00"
-    fi
-
-    # Set the BlueField boot override variable.
-    printf "\x07\x00\x00\x00\x$data" > $var
-}
-
 # Linux kernel exposes EFI variables data to userspace via efivarfs
 # interface. Thus mount it, if needed.
 test "$(ls -A $efivars)" || mount -t efivarfs none $efivars
 
 # Clean up boot options using 'efibootmgr'.
-[[ -n "$cleanall" ]] && (boot_cleanall; exit $?)
+[ -n "$cleanall" ] && (boot_cleanall; exit $?)
 
 # Add boot option
 if [ -n "$add" ]; then
@@ -203,21 +153,6 @@ if [ -n "$add" ]; then
         echo "Try: $PROGNAME --add <DISTRO> <KERNEL> <ARGS>"
         exit 1
     fi
-    boot_add $1 $2 $3
-    exit $?
-fi
-
-if [ -n "$force" ]; then
-    # Check arguments
-    if [ $# -lt 1 ]; then
-        echo "$PROGNAME: invalid operand(s)"
-        echo "Try: $PROGNAME --force <shell|pxe|default> [p]"
-        exit 1
-    fi
-    if [ -n "$2" ] && [ "$2" != "p" ]; then
-        echo "$PROGNAME: invalid option $2, did you mean 'p'?"
-        exit 1
-    fi
-    boot_override $1 $2
+    boot_add "$1" "$2" "$3"
     exit $?
 fi

@@ -4,7 +4,8 @@ After=getty.target
 
 [Service]
 Type=idle
-ExecStart=/opt/mellanox/scripts/bfvcheck
+ExecStartPre=/usr/bin/bfrshlog "Linux up"
+ExecStart=/usr/bin/bfvcheck
 StandardOutput=journal+console
 
 [Install]

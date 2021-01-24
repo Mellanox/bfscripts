@@ -31,17 +31,10 @@ echo "Beginning version check..."
 
 # bfb file used to extract ATF/UEFI's expected version information
 BOOTIMG_LOCATION=/lib/firmware/mellanox/boot/default.bfb
-bfver=/opt/mellanox/scripts/bfver
 
-# find the firmware package on the system
-mlxfw=/opt/mellanox/mlnx-fw-updater/firmware/mlxfwmanager_sriov_dis_aarch64
+mlxfw=$(bfhcafw find)
 
-if [ ! -f $mlxfw ]; then
-    # FW package not in /opt/mellanox, we're probably running on yocto
-    mlxfw=/lib/firmware/mellanox/mlxfwmanager_sriov_dis_aarch64
-fi
-
-if [ ! -f $mlxfw ]; then
+if [ "$?" -ne 0 ]; then
     # FW package not found anywhere, so error out fw check
     # We keep going to check bootloader versions anyway.
     echo "The firmware package could not be located."
@@ -69,18 +62,18 @@ BUILD_ATF=$(strings $BOOTIMG_LOCATION | grep -m 1 "(\(release\|debug\))")
 BUILD_UEFI=$(strings -e l $BOOTIMG_LOCATION | grep "BlueField" |\
     cut -d':' -f 2)
 
-bfver_out="$( $bfver )"
+bfver_out="$( bfver )"
 
 RUNTIME_ATF=$( echo "$bfver_out" | grep -m 1 "ATF" | cut -d':' -f 2,3 | \
     sed -e 's/[[:space:]]//' )
 RUNTIME_UEFI=$( echo "$bfver_out" | grep -m 1 "UEFI" | cut -d':' -f 2 | \
     sed -e 's/[[:space:]]//' )
 
-mlxfw_out=$( $mlxfw --query )
+mlxfw_out=$( $mlxfw --query ) && MLXFW_SUCCESS=0 || MLXFW_SUCCESS=1
 
 FW_UPDATED=no
 
-if [ $? -eq 0 ]; then
+if [ $MLXFW_SUCCESS -eq 0 ]; then
     # awk is used here to ease dealing with the spaces used in mlxfwmanager
     # output, and to make sure we pick the right FW line
     FIRMWARE_VERSIONS=$( echo "$mlxfw_out" | awk '($1 == "FW") && ($2 != "(Running)") { print $2 "," $3 }' )
@@ -90,7 +83,7 @@ if [ $? -eq 0 ]; then
 
     # If FW (Running) line exists, user updated firmware, but did
     # not power cycle, so output message further down
-    if [ ! -z "$(echo "\"$mlxfw_out\"" | grep 'FW *(Running)' )" ]; then
+    if echo "\"$mlxfw_out\"" | grep -q 'FW *(Running)' >/dev/null; then
         FW_UPDATED=yes
     fi
 else

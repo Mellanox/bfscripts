@@ -87,7 +87,7 @@ PERSIST_PART=/dev/mmcblk0p8
 
 # Load bf.cfg if exists, which could re-define the EFI_PART & ROOT_PART.
 if [ -e /etc/bf.cfg ]; then
-  eval "$(/opt/mlnx/scripts/bfcfg --part-info)"
+  eval "$(bfcfg --part-info)"
 fi
 
 # If both full_root and mini_root are set to a non-empty string
@@ -127,7 +127,8 @@ EOF
     # Keep asking until we get a straight answer
     # valid answers are y, yes, n, no, and abort
     while true; do
-        read -p 'format /data? (y/n/abort) ' confirm
+        printf 'format /data? (y/n/abort) '
+        read -r confirm
 
         case $confirm in
             [yY]|[yY][eE][sS])
@@ -151,17 +152,17 @@ fi
 
 #set boot arguments: Read current 'console' and 'earlycon'
 # parameters, and append the root filesystem parameters.
-bootarg="$(cat /proc/cmdline | sed 's/initrd=initramfs//')"
-bootarg="$(echo "$bootarg" root=$ROOT_PART rootwait)"
+bootarg="$(sed 's/initrd=initramfs//' /proc/cmdline)"
+bootarg="$bootarg root=$ROOT_PART rootwait"
 
-rescue_bootarg="$(cat /proc/cmdline | sed 's/initrd=initramfs//')"
-rescue_bootarg="$(echo "$bootarg" root=$ROOT_PART)"
+rescue_bootarg="$(sed 's/initrd=initramfs//' /proc/cmdline)"
+rescue_bootarg="$bootarg root=$ROOT_PART"
 
 # Older versions of systemd-gpt-auto-generator can't parse
 # the eMMC boot partitions properly.  BlueField does not
 # rely on this service so we disable it to prevent seeing
 # error messages in the log (which are harmless).
-bootarg="$(echo "$bootarg" rd.systemd.gpt_auto=0 systemd.gpt_auto=0 fsck.mode=force fsck.repair=yes)"
+bootarg="$bootarg rd.systemd.gpt_auto=0 systemd.gpt_auto=0 fsck.mode=force fsck.repair=yes"
 
 # This function installs grub and sets it as the default boot option
 install_grub()
@@ -181,8 +182,8 @@ install_grub()
     grub-install $EFI_PART --locale-directory=$localedir --efi-directory=$efidir --boot-directory=$bootdir
 
     touch $grubcfg
-    echo \
-"#
+    cat > $grubcfg <<EOF
+#
 # /boot/grub/grub.cfg
 #
 
@@ -204,12 +205,16 @@ menuentry "Yocto from eMMC" {
         linux (\$root)/Image $bootarg
 }
 
+menuentry "Yocto from eMMC (kdump)" {
+        linux (\$root)/Image $bootarg crashkernel=0M-2G:128M,2G-6G:256M,6G-8G:512M,8G-:768M systemd.wants=kdump
+}
+
 # Yocto rescue
 menuentry "Rescue from eMMC" {
         linux (\$root)/Image $rescue_bootarg
         initrd (\$root)/core-image-rescue-initramfs-bluefield.cpio.xz
 }
-" > $grubcfg
+EOF
 
     umount /mnt/boot
     umount /mnt
@@ -230,11 +235,11 @@ if [ -n "${format_persist}" ]; then
 fi
 
 # Create the yocto partitions.
-partresult="$(/opt/mlnx/scripts/bfpart $bfpart_args)"
+partresult="$(bfpart $bfpart_args)"
 persist_status=$(echo "$partresult" | grep PERSIST: | awk '{print $2}')
 
 # Cleans up the actual boot options.
-/opt/mlnx/scripts/bfbootmgr --cleanall
+bfbootmgr --cleanall
 
 mkdosfs $EFI_PART
 
@@ -296,7 +301,7 @@ cat <<EOF
 ***     core-image-full-BlueField-<version>.tar.xz                 ***
 ***     core-image-full-dev-BlueField-<version>.tar.xz             ***
 ***                                                                ***
-***   /opt/mlnx/scripts/bfinst --fullfs /tmp/<core-image>          ***
+***   bfinst --fullfs /tmp/<core-image>                            ***
 ***                                                                ***
 **********************************************************************
 EOF
@@ -306,7 +311,7 @@ sync
 
 if [ -n "${unload_modules}" ]; then
     # Unload various kernel modules before continuing.
-    if /opt/mlnx/scripts/bffamily | grep Sella; then
+    if bffamily | grep Sella; then
         rmmod mlx_cpld
     fi
 
@@ -315,7 +320,7 @@ if [ -n "${unload_modules}" ]; then
     rmmod mlx_compat
 fi
 
-tar_version=`ls -l /bin/tar`
+tar_version=$(ls -l /bin/tar)
 
 if [ "${tar_version#*busybox}" != "$tar_version" ]; then
     tar_options=""
@@ -332,7 +337,8 @@ if [ -n "${full_root}" ]; then
     bootfifo_rootfs_file=/tmp/rootfs.tar
     if [ "${fspath}" = "${bootfifo_rootfs_file}" ]; then
       ${ECHO} "boot: wait for decompression"
-      for i in {1..600}; do
+      # shellcheck disable=SC2034
+      for i in $(seq -s" " 900); do
         [ -f "${bootfifo_rootfs_file}_done" ] && break
         sleep 1
       done
@@ -341,7 +347,7 @@ if [ -n "${full_root}" ]; then
         rm "${bootfifo_rootfs_file}_done"
       else
         ${ECHO} "boot: decompression timeout"
-        exit -1
+        exit 1
       fi
       ${ECHO} "Installing root file system. This will take a few minutes."
       tar xf "$fspath" -C /mnt "$tar_options"
@@ -381,7 +387,7 @@ if [ -n "${full_root}" ]; then
     fi
 
     # Add preinit to kernel args
-    bootarg="$(echo "$bootarg" init=/sbin/preinit)"
+    bootarg="$bootarg init=/sbin/preinit"
     install_grub
 fi
 
@@ -400,7 +406,7 @@ cat <<EOF
 ***   to reboot. You may copy the initramfs file system to         ***
 ***   $ROOT_PART by doing the following:                           ***
 ***                                                                ***
-***   /opt/mlnx/scripts/bfinst --minifs                            ***
+***   bfinst --minifs                                              ***
 ***                                                                ***
 ***   Note that copying the initramfs to your eMMC parition is     ***
 ***   easy and fast but does not include many Linux packages you   ***
@@ -419,7 +425,7 @@ cat <<EOF
 ***     core-image-full-BlueField-<version>.tar.xz                 ***
 ***     core-image-full-dev-BlueField-<version>.tar.xz             ***
 ***                                                                ***
-***   /opt/mlnx/scripts/bfinst --fullfs /tmp/<core-image>          ***
+***   bfinst --fullfs /tmp/<core-image>                            ***
 ***                                                                ***
 **********************************************************************
 EOF
@@ -431,12 +437,8 @@ if [ -z "${skip_boot_update}" ]; then
     # MUST be executed after 'install_grub', otherwise the newly
     # created boot option would be either cleaned up or unset
     # from default option.
-    /opt/mlnx/scripts/bfrec
+    bfrec
 fi
 
-# Execute miscellaneous tasks. These are vendor/customer specific
-# operations that are required during installation procedure.
-# Customers are invited to provide their own configuration and list
-# it in 'misc_task_hooks'.
-[[ -e /opt/mlnx/scripts/bfmisc ]] && \
-    (. /opt/mlnx/scripts/bfmisc; misc_task_hooks)
+# Update configuration in case it's overwritten by bfinst
+bfcfg

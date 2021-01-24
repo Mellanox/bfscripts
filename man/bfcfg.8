@@ -1,0 +1,32 @@
+.TH BFCFG 8 "June 2020"
+.SH NAME
+bfcfg \- BlueField SoC configuration utilities
+.SH SYNOPSIS
+.B bfcfg
+.RB [ \-\-help | \-h ]
+.PP
+.B bfcfg
+.RB [ \-\-dump | \-d ]
+.PP
+.B bfcfg
+.RB [ \-\-part-info | \-p ]
+.SH DESCRIPTION
+BlueField devices may be configured by a series of configuration options
+contained in the
+.I /etc/bf.cfg
+file. The bf.cfg file is in a simple key-value pair format. For more
+information about the keys and their use, see the source code of
+.BR bfcfg .
+Running this script will update various aspects of the system to reflect the
+settings specified in bf.cfg.
+.SH OPTIONS
+.IP "--dump | -d"
+Instead of configuring the system, dump current configuration values.
+.IP "--part-info | -p"
+Parse the partition configuration in
+.I /etc/bf.cfg
+and export variables $EFI_PART, $ROOT_PART, and $PERSIST_PART. Used by
+.BR bfpart (8)
+and
+.BR bfinst (8)
+to determine how to lay out the eMMC for installation.

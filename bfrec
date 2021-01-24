@@ -1,6 +1,6 @@
-#!/bin/sh
+#!/bin/bash
 
-# Copyright (c) 2017, Mellanox Technologies
+# Copyright (c) 2020, Mellanox Technologies
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -38,32 +38,27 @@ usage()
 {
     cat <<EOF
 Usage: $PROGNAME    [--help]
-                    [--default [FILE]] (deprecated)
                     [--bootctl [FILE]]
                     [--capsule [FILE]]
 
 Description:
   --help                : print help.
-  --default [FILE]      : update the boot partition via the
-                          kernel path (deprecated). If FILE
-                          isn't specified, then use default.
   --bootctl [FILE]      : update the boot partition via the
-                          kernel path. This is intended to
-                          replace '--default'. If FILE isn't
-                          specified, then use default.
+                          kernel path. If FILE isn't specified,
+                          /lib/firmware/mellanox/boot/default.bfb
+                          will be used by default.
   --capsule [FILE]      : update the boot partition via the
                           capsule path. If FILE isn't specified,
-                          then use default.
+                          /lib/firmware/mellanox/boot/capsule/MmcBootCap
+                          will be used by default.
 EOF
     exit 0
 }
 
 bootctl_mode=
 capsule_mode=
-option_name=
 
-PARSED_OPTIONS=`getopt -n "$PROGNAME" -o h \
-                    -l help,default,bootctl,capsule -- "$@"`
+PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o h -l help,bootctl,capsule -- "$@")
 eval set -- "$PARSED_OPTIONS"
 
 while true
@@ -72,14 +67,8 @@ do
       -h | --help)
           usage
           ;;
-      --default)
-          bootctl_mode=1
-          option_name="default"
-          shift
-          ;;
       --bootctl)
           bootctl_mode=1
-          option_name="bootctl"
           shift
           ;;
       --capsule)
@@ -93,68 +82,73 @@ do
   esac
 done
 
-if [ -n "$bootctl_mode" ] && [ -n "$capsule_mode" ]; then
-    cat <<EOF
-ERROR: Use either options '--bootctl' or '--capsule'
-EOF
-    exit 1
+# Mount efivars sysfs if not already
+efivars=/sys/firmware/efi/efivars
+test "$(ls -A $efivars)" || mount -t efivarfs efivarfs $efivars
+
+# Check secure boot
+secure_boot=
+if [ -e "$efivars/PK-8be4df61-93ca-11d2-aa0d-00e098032b8c" ]; then
+    secure_boot=1
+fi
+
+# Only allow capsule when secure boot is enabled.
+if [ -n "$bootctl_mode" ]; then
+    if [ -n "$secure_boot" ]; then
+        echo "ERROR: need to use capsule in secure boot mode"
+        exit 1
+    fi
+
+    if [ -n "$capsule_mode" ]; then
+        echo "ERROR: Use either options '--bootctl' or '--capsule'"
+        exit 1
+    fi
+elif [ -z "$capsule_mode" ]; then
+    if [ -n "$secure_boot" ]; then
+      capsule_mode=1
+    else
+      bootctl_mode=1
+    fi
+fi
+
+#
+# Fall back to bootctl mode if capsule is not supported, which is
+# needed to be compatible with old boot-image versions.
+#
+os_cap_var=OsIndicationsSupported-8be4df61-93ca-11d2-aa0d-00e098032b8c
+os_var=OsIndications-8be4df61-93ca-11d2-aa0d-00e098032b8c
+if [ ! -e "${efivars}/${os_cap_var}" ]; then
+    capsule_mode=
+    bootctl_mode=1
+else
+    # Check the EFI_OS_INDICATIONS_FILE_CAPSULE_DELIVERY_SUPPORTED bit.
+    cp -f ${efivars}/${os_cap_var} /tmp/
+    os_cap=$(hexdump -s 4 -n 1  -e '/1 "%d" "\n"' /tmp/${os_cap_var})
+    os_cap=$((os_cap & 4))
+    if [ $os_cap -eq 0 ]; then
+        capsule_mode=
+        bootctl_mode=1
+    fi
 fi
 
 bfb_location=/lib/firmware/mellanox/boot
 capsule_location=/lib/firmware/mellanox/boot/capsule
 
-exit_failure()
-{
-    action=$1
-    path=$2
-    if [ -n "$action" ]; then
-        echo "use $path path to update boot partitions."
-        $action
-        exit $?
-    fi
-
-    exit 2
-}
-
 uefi_capsule_update()
 {
-    # Set firmware update application variables
-    updater_efi=FirmwareUpdate.efi
-    updater_desc="FirmwareUpdater"
     # Set EFI System partition mountpoint
     mount_efi=/mnt/efi_system_partition
+
     # Set capsule update file variable name
     capsule_efi=MmcBootCap
     device_efi=/dev/mmcblk0p1
 
-    # First, check whether UEFI supports capsule update. Note that UEFI
-    # Capsule update is supported in UEFI version 2.0 or greater.
-    bfver=/opt/mlnx/scripts/bfver
-    uefi_ver=$($bfver | grep UEFI | cut -d':' -f2 | sed -e 's/[[:space:]]//')
-    uefi_ver_major=$(echo $uefi_ver | cut -d'.' -f1)
-
-    num_re='^[0-9]+$'
-    if ! [[ ${uefi_ver_major} =~ $num_re ]]; then
-        echo "UEFI Version unrecognized."
-        exit_failure $1 $2
-    fi
-
-    if [ $((uefi_ver_major)) -lt 2 ]; then
-        echo "Capsule update isn't supported in UEFI version $uefi_ver"
-        exit_failure $1 $2
-    fi
-
     # UEFI will read the capsule image from the EFI System Partition.
     # Check whether an EFI System partition is present. If not, then
     # the capsule update is not supported;
-    if [ ! "$(fdisk -l | grep "EFI System")" ]; then
+    if ! fdisk -l | grep -q "EFI System" >/dev/null; then
         echo "cannot find EFI System Partition"
-        exit_failure $1 $2
-    fi
-
-    if [ ! -f "$capsule_location/$updater_efi" ]; then
-        echo "cannot find EFI updater application"
-        exit_failure $1 $2
+        exit 2
     fi
 
     if [ ! -f "$capsule_file" ]; then
@@ -162,16 +156,8 @@ uefi_capsule_update()
     fi
 
     if [ ! -f "$capsule_file" ]; then
-        echo "cannot find Capsule $capsule_file"
-        # Use the default.bfb file as capsule file. This might be
-        # reviewed once the UEFI capsule format is used.
-        capsule_file=$bfb_location/default.bfb
-        if [ -f "$capsule_file" ]; then
-            echo "use $capsule_file as Capsule file"
-        else
-            echo "no Capsule update file found"
-            exit_failure $1 $2
-        fi
+        echo "Capsule file not found"
+        exit 2
     fi
 
     # Check whether the EFI System Partition is mounted. If not mounted,
@@ -187,36 +173,25 @@ uefi_capsule_update()
         mount_efi=$esp_dir
     fi
 
-    # Copy the capsule file into the EFI System Partition. Rename the file
-    # to match the expected pathname in UEFI, if needed.
-    $run cp $capsule_file $mount_efi/$capsule_efi
-    $run cp $capsule_location/$updater_efi $mount_efi/$updater_efi
+    # Copy the capsule file into the EFI System Partition.
+    # "EFI/UpdateCapsule" is the standard directory defined by UEFI spec.
+    # Files in this directory will processed as capsules in alphabetical
+    # order once the capsule flag is set in the 'OsIndications' variable
+    # which is done by the printf command below.
+    $run mkdir -p "$mount_efi/EFI/UpdateCapsule" 2>/dev/null
+    $run cp $capsule_file "$mount_efi/EFI/UpdateCapsule/$capsule_efi"
+    $run printf "\x07\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00" > \
+        "${efivars}/${os_var}"
     $run sync
 
     # Doing some cleanup, if needed
     if [ -z "$esp_dir"  ]; then
-        $run umount $mount_efi
-        $run rmdir $mount_efi
+        $run umount "$mount_efi"
+        $run rmdir "$mount_efi"
+        $run sync
         # Wait until eMMC internal cache is fully flushed
         $run sleep 3
     fi
-
-    # Create a boot entry to process the capsule update.
-    efivars=/sys/firmware/efi/efivars
-    test "$(ls -A $efivars)" || mount -t efivarfs efivarfs $efivars
-
-    # The UEFI boot device selector must boot the EFI updater application
-    # to enter the system firmware update mode.
-
-    if [ "$(efibootmgr | grep $updater_desc)" ]; then
-        option=$(efibootmgr | grep $updater_desc | cut -f1 -d'*' | cut -c5-)
-        $run efibootmgr -b "$option" -B
-    fi
-
-    disk=$(echo $device_efi | cut -f 1 -d'p')
-    part=$(echo $device_efi | cut -f 2 -d'p')
-    $run efibootmgr -c -d $disk -p $part \
-        -L "$updater_desc" -l "$updater_efi" 2>&1 >/dev/null
 
     cat <<EOF
 
@@ -231,11 +206,6 @@ EOF
     # Enable card-reset
     $run /sbin/mlxbf-bootctl -e
 
-    ## Ask if the user wishes to reboot?
-    #read -p 'Reboot now (Y/n) [n]: ' answer
-    #if [ "$answer" == 'Y' ]; then
-    #    $run reboot
-    #fi
     return 0
 }
 
@@ -243,14 +213,14 @@ kernel_bootctl_update()
 {
     bfb_device=/dev/mmcblk0
 
-    if [ ! $(which mlxbf-bootctl) ]; then
+    if ! command -v mlxbf-bootctl >/dev/null; then
         echo "mlxbf-bootctl program is not supported"
-        exit_failure $1 $2
+        exit 2
     fi
 
     if [ ! -b "$bfb_device" ]; then
         echo "bad block device $bfb_device"
-        exit_failure $1 $2
+        exit 2
     fi
 
     if [ -z "$bfb_file" ]; then
@@ -259,7 +229,7 @@ kernel_bootctl_update()
 
     if [ ! -f "$bfb_file" ]; then
         echo "cannot find file $bfb_file"
-        exit_failure $1 $2
+        exit 2
     fi
 
     $run /sbin/mlxbf-bootctl -s -d $bfb_device -b $bfb_file
@@ -287,7 +257,7 @@ if [ -n "$bootctl_mode" ] || [ -n "$capsule_mode" ]; then
     bfb_file=
     capsule_file=
     if [ $# -eq 1 ]; then
-        if [ ! -f $1 ]; then
+        if [ ! -f "$1" ]; then
 	    echo "cannot find file $1"
 	    exit 1
 	fi
@@ -298,7 +268,7 @@ fi
 
 if [ -n "$bootctl_mode" ]; then
     if [ $# -ge 2 ]; then
-        echo "too many arguments with option '--$option_name'"
+        echo "too many arguments"
         exit 1
     fi
 
@@ -314,11 +284,3 @@ elif [ -n "$capsule_mode" ]; then
     # Initiate UEFI capsule update.
     uefi_capsule_update; exit $?
 fi
-
-# If we reach here, then try both modes. Start with capsule update path
-# otherwise use the bootctl tool.
-next_update_action=kernel_bootctl_update
-next_update_path=bootctl
-
-uefi_capsule_update $next_update_action $next_update_path
-

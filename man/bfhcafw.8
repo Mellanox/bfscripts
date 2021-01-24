@@ -1,0 +1,38 @@
+.TH BFFINDFW 8 "October 2020"
+.SH NAME
+bfhcafw \- Utilities for BlueField ConnectX firmware
+.SH SYNOPSIS
+.B bfhcafw
+.RB [ \-\-help | \-h ]
+.PP
+.B bfhcafw
+find
+.PP
+.B bfhcafw
+flint FLINT_ARGS
+.PP
+.B bfhcafw
+mcra MCRA_ARGS
+.PP
+.B bfhcafw
+bus
+.SH DESCRIPTION
+A collection of utilities for managing ConnectX interfaces on BlueField
+systems. The functionality of this utility is divided into commands:
+.IP find
+Searches the filesystem for the ConnectX firmware distribution appropriate
+for the current BlueField hardware revision and linux distribution, and prints
+the absolute file path to stdout.
+.IP flint FLINT_ARGS
+Automatically picks the mstflint executable and PCI device path to run
+flint. Automatically selects the -d argument based on platform, all other
+arguments are passed to flint.
+.IP mcra FLINT_ARGS
+Automatically picks the mstmcra executable and PCI device path to run
+mcra. Automatically selects the device argument based on platform, all other
+arguments are passed to mcra.
+.IP bus
+Prints the PCI device path for the current BlueField hardware platform.
+.SH OPTIONS
+.IP "-h | --help"
+Print a short help message.

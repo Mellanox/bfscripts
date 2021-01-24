@@ -1,0 +1,5 @@
+RPMBUILD
+oe-workdir
+oe-logs
+git_dir_pack
+*.src.rpm

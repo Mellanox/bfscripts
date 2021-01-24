@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Copyright (c) 2020, Mellanox Technologies
 # All rights reserved.
@@ -27,16 +27,30 @@
 # of the authors and should not be interpreted as representing official policies,
 # either expressed or implied, of the FreeBSD Project.
 
-bfcfg_version=0.1
+# shellcheck disable=SC2059
+true
+
+bfcfg_version=0.2
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
 dump_mode=0
 
+efivars=/sys/firmware/efi/efivars
+efi_global_var_guid=8be4df61-93ca-11d2-aa0d-00e098032b8c
+efi_vlan_var_guid=9e23d768-d2f3-4366-9fc3-3a7aba864374
+rshim_efi_mac_sysfs=${efivars}/RshimMacAddr-${efi_global_var_guid}
+oob_mac_sysfs=/sys/bus/platform/drivers/mlx-bootctl/oob_mac
+
+log_msg()
+{
+  echo "$@" >> ${log_file}
+}
+
 mfg_cfg()
 {
-  local oob_mac_sysfs=/sys/bus/platform/drivers/mlx-bootctl/oob_mac
+  local tmp_file=/tmp/.bfcfg-mfg-data
   local opn_str_sysfs=/sys/bus/platform/drivers/mlx-bootctl/opn_str
-  local mac_sysfs=/sys/firmware/efi/efivars/OobMacAddr-8be4df61-93ca-11d2-aa0d-00e098032b8c
+  local oob_efi_mac_sysfs=${efivars}/OobMacAddr-${efi_global_var_guid}
   local mac_err opn_err mac
 
   if [ $dump_mode -eq 1 ]; then
@@ -45,32 +59,40 @@ mfg_cfg()
     return
   fi
 
-  if [ -n "${MFG_OOB_MAC}" -a -e "${oob_mac_sysfs}" -a -n "${MFG_OPN_STR}" -a -e "${opn_str_sysfs}" ]; then
-    echo "mfg: OOB_MAC=${MFG_OOB_MAC}" >> ${log_file}
+  if [ -n "${MFG_OOB_MAC}" ] && [ -e "${oob_mac_sysfs}" ] && [ -n "${MFG_OPN_STR}" ] && [ -e "${opn_str_sysfs}" ]; then
+    log_msg "mfg: OOB_MAC=${MFG_OOB_MAC}"
     echo "${MFG_OOB_MAC}" > ${oob_mac_sysfs} 2>>${log_file}
     mac_err=$?
 
-    echo "mfg: OPN_STR=${MFG_OPN_STR}" >> ${log_file}
+    log_msg "mfg: OPN_STR=${MFG_OPN_STR}"
     echo "${MFG_OPN_STR}" > ${opn_str_sysfs} 2>>${log_file}
     opn_err=$?
 
-    if [ ${mac_err} -eq 0 -a ${opn_err} -eq 0 ]; then
-      echo "mfg: lock the partition" >> ${log_file}
+    if [ ${mac_err} -eq 0 ] && [ ${opn_err} -eq 0 ]; then
+      log_msg "mfg: lock the partition"
       echo 1 > /sys/bus/platform/drivers/mlx-bootctl/mfg_lock 2>>${log_file}
     else
-      echo "mfg: mac_err=${mac_err} opn_err=${opn_err}" >> ${log_file}
+      log_msg "mfg: mac_err=${mac_err} opn_err=${opn_err}"
     fi
 
     # Update the MAC address in UEFI variable.
-    mac=$(echo "${MFG_OOB_MAC}" | sed 's/:/\\x/g')
+    # Somehow 'printf' into the sysfs file doesn't always work, probably
+    # due to length check of each write. A temporary file is used here
+    # to workaround such issue.
+    mac="${MFG_OOB_MAC//:/\\x}"
     mac="\\x07\\x00\\x00\\x00\\x${mac}"
-    chattr -i ${mac_sysfs} 2>/dev/null
-    printf ${mac} > ${mac_sysfs}
+    printf "${mac}" > ${tmp_file}
+    chattr -i ${oob_efi_mac_sysfs} 2>/dev/null
+    cp ${tmp_file} ${oob_efi_mac_sysfs}
+    rm -f ${tmp_file}
   else
-    echo "mfg: skip" >> ${log_file}
+    log_msg "mfg: skip"
   fi
 }
 
+#
+# Set a value at the specified offset in a file.
+#
 sys_cfg_one_byte()
 {
   local tmp_file=$1
@@ -89,10 +111,10 @@ sys_cfg_one_byte()
     else
       bin_value='\x00'
     fi
-    printf ${bin_value} | dd of="${tmp_file}" seek="${offset}" bs=1 count=1 conv=notrunc 2> /dev/null
+    printf "${bin_value}" | dd of="${tmp_file}" seek="${offset}" bs=1 count=1 conv=notrunc 2> /dev/null
 
     has_change=1
-    echo "sys: ${name}=${value}" >> ${log_file}
+    log_msg "sys: ${name}=${value}"
   fi
 }
 
@@ -112,14 +134,15 @@ sys_cfg_one_byte()
 #
 sys_cfg()
 {
-  local tmp_file=/tmp/.sysfs-data
-  local sys_cfg_sysfs=/sys/firmware/efi/efivars/BfSysCfg-9c759c02-e5a3-45e4-acfc-c34a500628a6
+  local tmp_file=/tmp/.bfcfg-sysfs-data
+  local sys_cfg_sysfs=${efivars}/BfSysCfg-9c759c02-e5a3-45e4-acfc-c34a500628a6
 
-  if [ $dump_mode -eq 0 -a ! -e "${sys_cfg_sysfs}" ]; then
-    echo "sys: failed to find the EFI variable" >> ${log_file}
+  if [ $dump_mode -eq 0 ] && [ ! -e "${sys_cfg_sysfs}" ]; then
+    log_msg "sys: failed to find the EFI variable"
     return
   fi
 
+  # shellcheck disable=SC2216
   yes | cp -f ${sys_cfg_sysfs} ${tmp_file}
   has_change=0
 
@@ -143,30 +166,35 @@ sys_cfg()
 misc_cfg()
 {
   # Rshim MAC address.
-  local rshim_mac_sysfs=/sys/firmware/efi/efivars/RshimMacAddr-8be4df61-93ca-11d2-aa0d-00e098032b8c
   local mac
+  local tmp_file=/tmp/.bfcfg-misc-data
 
   if [ $dump_mode -eq 1 ]; then
-    mac=$(hexdump -v -e '/1 "%02x"' ${rshim_mac_sysfs})
+    mac=$(hexdump -v -e '/1 "%02x"' ${rshim_efi_mac_sysfs})
     mac="${mac:8:2}:${mac:10:2}:${mac:12:2}:${mac:14:2}:${mac:16:2}:${mac:18:2}"
     echo "misc: NET_RSHIM_MAC=${mac}"
   elif [ -n "${NET_RSHIM_MAC}" ]; then
-    mac=$(echo "${NET_RSHIM_MAC}" | sed 's/:/\\x/g')
+    mac="${NET_RSHIM_MAC//:/\\x}"
     mac="\\x07\\x00\\x00\\x00\\x${mac}"
-    chattr -i ${rshim_mac_sysfs}
-    printf ${mac} > ${rshim_mac_sysfs}
-    echo "misc: NET_RSHIM_MAC=${NET_RSHIM_MAC}" >> ${log_file}
+    printf "${mac}" > ${tmp_file}
+    chattr -i ${rshim_efi_mac_sysfs}
+    cp ${tmp_file} ${rshim_efi_mac_sysfs}
+    rm -f ${tmp_file}
+    log_msg "misc: NET_RSHIM_MAC=${NET_RSHIM_MAC}"
   fi
 }
 
+#
 # Parse the partition configuration and export $EFI_PART, $ROOT_PART and
 # $PERSIST_PART
+#
 part_info()
 {
   local disk part value
 
   for disk in {0..15}; do
     eval "disk_name=\${DISK${disk}_NAME}"
+    # shellcheck disable=SC2154
     [ -z "${disk_name}" ] && continue
 
     for part in {0..15}; do
@@ -188,17 +216,370 @@ part_info()
   done
 }
 
+#
+# Add header into a boot entry
+# $1: output file
+#
+boot_cfg_add_header()
+{
+  printf "\\x07\\x00\\x00\\x00\\x01\\x00\\x00\\x00" >> "$1"
+}
+
+#
+# Add length into a boot entry
+# $1: output file
+# $2: length
+#
+boot_cfg_add_len()
+{
+  len=$2
+  len=$(printf '%04x' "${len}")
+  printf "\\x${len:2:2}\\x${len:0:2}" >> "$1"
+}
+
+#
+# Add tail into a boot entry
+# $1: output file
+#
+boot_cfg_add_tail()
+{
+  printf "\\x7f\\xff\\x04\\x00" >> "$1"
+}
+
+#
+# Add name into a boot entry
+# $1: output file
+# $2: name
+#
+boot_cfg_add_name()
+{
+  local idx name=$2
+
+  for ((idx=0; idx<${#name}; idx++)); do
+    printf "${name:$idx:1}" >> "$1"
+    printf "\\x00" >> "$1"
+  done
+  printf "\\x00\\x00" >> "$1"
+}
+
+#
+# Add PCIe info into a boot entry
+# $1: output file
+# $2: port name
+#
+# Note: The quoting here is intentional, spaces need to be kept out
+# shellcheck disable=SC2140
+boot_cfg_add_pcie()
+{
+  printf \
+"\\x02\\x01\\x0c\\x00\\xd0\\x41\\x03\\x0a\\x00\\x00\\x00\\x00"\
+"\\x01\\x01\\x06\\x00\\x00\\x00\\x01\\x01\\x06\\x00\\x00\\x00"\
+"\\x01\\x01\\x06\\x00\\x00\\x02\\x01\\x01\\x06\\x00" >> "$1"
+  if [ "$2" = "NIC_P0" ]; then
+    printf "\\x00" >> "$1"
+  else
+    printf "\\x01" >> "$1"
+  fi
+  printf "\\x00" >> "$1"
+}
+
+#
+# Add Eth/MAC info into a boot entry
+# $1: output file
+# $2: MAC address (xx:xx:xx:xx:xx:xx)
+#
+boot_cfg_add_eth()
+{
+  local idx mac=$2
+
+  printf "\\x03\\x0b\\x25\\x00" >> "$1"
+  mac="\\x${mac//:/\\x}"
+  printf "${mac}" >> "$1"
+  for idx in {1..26}; do
+    printf "\\x00" >> "$1"
+  done
+  printf "\\x01" >> "$1"
+}
+
+#
+# Add VLAN info into a boot entry
+# $1: output file
+# $2: decimal VLAN id
+#
+boot_cfg_add_vlan()
+{
+  local vlan_id=$2
+
+  vlan_id=$(printf '%04x' "${vlan_id}")
+  printf "\\x03\\x14\\x06\\x00\\x${vlan_id:2:2}\\x${vlan_id:0:2}" >> "$1"
+}
+
+#
+# Add IPv4 info into a boot entry
+# $1: output file
+#
+boot_cfg_add_ipv4()
+{
+  local idx
+
+  printf "\\x03\\x0c\\x1b\\x00" >> "$1"
+  for idx in {1..23}; do
+    printf "\\x00" >> "$1"
+  done
+}
+
+#
+# Add IPv6 info into a boot entry
+# $1: output file
+#
+boot_cfg_add_ipv6()
+{
+  local idx
+
+  printf "\\x03\\x0d\\x3c\\x00" >> "$1"
+  for idx in {1..39}; do
+    printf "\\x00" >> "$1"
+  done
+  printf "\\x40" >> "$1"
+  for idx in {1..16}; do
+    printf "\\x00" >> "$1"
+  done
+}
+
+#
+# Boot Entry configuration
+# Each entry BOOT<N> could have the following format:
+#   PXE:
+#     BOOT<N> = NET-<NIC_P0 | NIC_P1 | OOB | RSHIM>[.<vlan-id>]-<IPV4 | IPV6>
+#   UEFI Shell:
+#     BOOT<N> = UEFI_SHELL
+#   DISK: boot entries created during OS installation.
+#     BOOT<N> = DISK
+# Example:
+#   BOOT0 = NET-NIC_P1-IPV4
+#   BOOT1 = DISK
+#
+boot_cfg()
+{
+  local i tmp idx entry ifname proto mac vlan vlan_len disk_entry_idx
+  local shell_entry disk_entries boot_order
+  local tmp_dir=/tmp/.boot_cfg
+  local tmp_file=${tmp_dir}/boot
+  local tmp_vlan_file=${tmp_dir}/vlan
+  local value tmp_entry old_boot_order
+
+  [ $dump_mode -eq 1 ] && return
+
+  rm -rf ${tmp_dir} 2>/dev/null
+  mkdir -p ${tmp_dir}
+
+  old_boot_order=$(efibootmgr 2>/dev/null | grep BootOrder | awk '{print $2}' | tr ',' ' ')
+
+  # Check whether to preserve booting entries from disk.
+  for i in {0..32}; do
+    eval "entry=\${BOOT${i}}"
+    entry=$(echo "${entry}" | tr '[:lower:]' '[:upper:]')
+    [ -n "${entry}" ] && tmp=${entry}
+
+    if [ "${entry}" = "DISK" ]; then
+      for tmp_entry in ${old_boot_order}; do
+        value=$(efibootmgr -v 2>/dev/null | grep "^Boot${tmp_entry}\*" | grep -w HD)
+        if [ -n "${value}" ]; then
+          disk_entries="${disk_entries} ${tmp_entry}"
+        fi
+      done
+      break
+    elif [ "${entry}" = "UEFI_SHELL" ]; then
+      # Save the UEFI shell option
+      shell_entry=$(efibootmgr 2>/dev/null | grep "EFI Internal Shell" | cut -c5-8)
+      cp -f ${efivars}/Boot"${shell_entry}"* ${tmp_dir}/shell
+    fi
+  done
+
+  # Don't continue if nothing configured.
+  [ -z "${tmp}" ] && return
+
+  # Save disk entries
+  for i in ${disk_entries}; do
+    cp ${efivars}/Boot"${i}"* ${tmp_dir}/
+  done
+
+  # Remove all existing entries
+  rm -f ${efivars}/Boot00*
+
+  # Scan it again to add boot entries
+  idx=0
+  for i in {0..32}; do
+    eval "entry=\${BOOT${i}}"
+    [ -z "${entry}" ] && continue
+    rm -f ${tmp_file} 2>/dev/null
+    entry=$(echo "${entry}" | tr '[:lower:]' '[:upper:]')
+
+    # BOOT<N> = DISK
+    if [ ."${entry}" = ."DISK" ]; then
+      disk_entry_idx=64
+      for j in $disk_entries; do
+        tmp=$(printf '%04x' ${disk_entry_idx})
+        cp "${tmp_dir}/Boot${j}-${efi_global_var_guid}" "${efivars}/Boot${tmp}-${efi_global_var_guid}"
+        [ -n "${boot_order}" ] && boot_order="${boot_order},"
+        boot_order="${boot_order}${tmp}"
+        disk_entry_idx=$((disk_entry_idx + 1))
+      done
+      continue
+    fi
+
+    # BOOT<N> = UEFI_SHELL
+    if [ ."${entry}" = ."UEFI_SHELL" ]; then
+      if [ ! -e "${tmp_dir}/shell" ]; then
+        log_msg "boot: UEFI shell entry not found"
+        continue
+      fi
+      cp -f ${tmp_dir}/shell ${tmp_file}
+    else
+      # BOOT<N> = NET-<NIC_P0 | NIC_P1 | OOB | RSHIM>[.<vlan-id>]-<IPV4 | IPV6>
+      ifname=$(echo "${entry}" | cut -d '-' -f 2)
+      proto=$(echo "${entry}" | cut -d '-' -f 3)
+      vlan=""
+      vlan_len=0
+      if [[ "${ifname}" = *"."* ]]; then
+        vlan=$(echo "${ifname}" | cut -d '.' -f 2)
+        ifname=$(echo "${ifname}" | cut -d '.' -f 1)
+        vlan_len=6
+      fi
+      if [ -z "${ifname}" ] || [ -z "${proto}" ]; then
+        log_msg "boot: invalid format ${entry}"
+        continue
+      fi
+      if [ "${proto}" != "IPV4" ] && [ "${proto}" != "IPV6" ]; then
+        log_msg "boot: invalid format ${entry}, need IPV4 or IPV6"
+        continue
+      fi
+
+      boot_cfg_add_header "${tmp_file}"
+
+      case "${ifname}" in
+      OOB)
+        mac=$(cat ${oob_mac_sysfs} 2>/dev/null)
+        if [ -z "${mac}" ]; then
+          log_msg "boot: failed to get MAC for ${entry}"
+          continue
+        fi
+        if [ "${proto}" = "IPV4" ]; then
+          boot_cfg_add_len "${tmp_file}" $((68 + vlan_len))
+        else
+          boot_cfg_add_len "${tmp_file}" $((101 + vlan_len))
+        fi
+        boot_cfg_add_name "${tmp_file}" "${entry}"
+        ;;
+
+      RSHIM)
+        mac=$(hexdump -v -e '/1 " %02x"' ${rshim_efi_mac_sysfs} 2>/dev/null)
+        if [ -z "${mac}" ]; then
+          log_msg "boot: failed to get MAC for ${entry}"
+          continue
+        fi
+        mac="${mac// /:}"
+        mac=${mac: -17}
+        if [ "${proto}" = "IPV4" ]; then
+          boot_cfg_add_len "${tmp_file}" $((68 + vlan_len))
+        else
+          boot_cfg_add_len "${tmp_file}" $((101 + vlan_len))
+        fi
+        boot_cfg_add_name "${tmp_file}" "${entry}"
+        ;;
+
+      NIC_P0|NIC_P1)
+        mac=$(bfhcafw flint q 2>/dev/null | grep "^Base MAC" | awk '{print $3}')
+        if [ -z "${mac}" ] || [ ."${mac}" = ."N/A" ]; then
+          log_msg "boot: failed to get MAC for ${entry}"
+          continue
+        fi
+        mac="0x${mac}"
+        if [ "${ifname}" = "NIC_P0" ]; then
+          mac=$((mac + 4))
+        else
+          mac=$((mac + 5))
+        fi
+        mac=$(printf '%012x' ${mac})
+        # shellcheck disable=SC2116,SC2096,SC2086
+        mac=$(echo ${mac:0:2}:${mac:2:2}:${mac:4:2}:${mac:6:2}:${mac:8:2}:${mac:10:2})
+  
+        if [ "${proto}" = "IPV4" ]; then
+          boot_cfg_add_len "${tmp_file}" $((104 + vlan_len))
+        else
+          boot_cfg_add_len "${tmp_file}" $((137 + vlan_len))
+        fi
+        boot_cfg_add_name ${tmp_file} "${entry}"
+        boot_cfg_add_pcie "${tmp_file}" "${ifname}"
+        ;;
+  
+      *)
+        continue
+        ;;
+      esac
+  
+      boot_cfg_add_eth "${tmp_file}" "${mac}"
+
+      # Remove old VLAN configuration
+      mac=$(echo "${mac}" | tr '[:lower:]' '[:upper:]')
+      mac="${mac//:/}"
+      eval "tmp=\${${ifname}_VLAN_SET}"
+      if [ -z "${tmp}" ]; then
+        eval "${ifname}_VLAN_SET=1"
+        chattr -i "${efivars}/${mac}-${efi_vlan_var_guid}" 2>/dev/null
+        rm -f "${efivars}/${mac}-${efi_vlan_var_guid}" 2>/dev/null
+      fi
+      # Add new VLAN if specified
+      if [ -n "${vlan}" ]; then
+        tmp=$(printf '%04x' "${vlan}")
+        if [ ! -e "${efivars}/${mac}-${efi_vlan_var_guid}" ]; then
+          printf "\\x07\\x00\\x00\\x00\\x${tmp:2:2}\\x${tmp:0:2}" > \
+            "${efivars}/${mac}-${efi_vlan_var_guid}"
+        else
+          chattr -i "${efivars}/${mac}-${efi_vlan_var_guid}"
+          cp "${efivars}/${mac}-${efi_vlan_var_guid}" ${tmp_vlan_file}
+          printf "\\x${tmp:2:2}\\x${tmp:0:2}" >> ${tmp_vlan_file}
+          cp ${tmp_vlan_file} "${efivars}/${mac}-${efi_vlan_var_guid}"
+        fi
+        boot_cfg_add_vlan "${tmp_file}" "${vlan}"
+      fi
+  
+      if [ "${proto}" = "IPV4" ]; then
+        boot_cfg_add_ipv4 "${tmp_file}"
+      else
+        boot_cfg_add_ipv6 "${tmp_file}"
+      fi
+
+      boot_cfg_add_tail "${tmp_file}"
+    fi
+  
+    if [ -e "${tmp_file}" ]; then
+      tmp=$(printf '%04x' ${idx})
+      cp ${tmp_file} "${efivars}/Boot${tmp}-${efi_global_var_guid}"
+      log_msg "boot: add Boot${tmp}(${entry})"
+      [ -n "${boot_order}" ] && boot_order="${boot_order},"
+      boot_order="${boot_order}${tmp}"
+      idx=$((idx + 1))
+    fi 
+  done
+
+  efibootmgr -o "${boot_order}" >/dev/null
+  log_msg "boot: set boot order ${boot_order}"
+  rm -rf ${tmp_dir} 2>/dev/null
+}
+
 usage()
 {
   echo "syntax: bfcfg [--help|-h] [--dump|-d] [--part-info|-p]"
 }
 
 # Source the configuration if exists.
+# shellcheck source=/dev/null
 [ -e "${cfg_file}" ] && . ${cfg_file}
 
 # Parse the arguments.
-options=`getopt -n bfcfg -o dhp -l dump,help,part-info -- "$@"`
-eval set -- $options
+options=$(getopt -n bfcfg -o dhp -l dump,help,part-info -- "$@")
+eval set -- "$options"
 while [ "$1" != -- ]; do
   case $1 in
     --dump|-d) dump_mode=1 ;;
@@ -210,14 +591,16 @@ done
 shift
 
 # Start a new log file.
-echo "bfcfg (ver ${bfcfg_version})" > ${log_file}
-date >> ${log_file}
-echo >> ${log_file}
+rm -f ${log_file} >/dev/null
+log_msg "bfcfg (ver ${bfcfg_version})"
+log_msg "$(date)"
+log_msg
 
 # Mount the efi variables.
-efivars=/sys/firmware/efi/efivars
 test "$(ls -A ${efivars})" || mount -t efivarfs none ${efivars}
 
 mfg_cfg
 sys_cfg
 misc_cfg
+boot_cfg
+sync

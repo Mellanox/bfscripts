@@ -1,0 +1,189 @@
+#!/bin/sh -e
+
+# Copyright (c) 2020, Mellanox Technologies
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# The views and conclusions contained in the software and documentation are those
+# of the authors and should not be interpreted as representing official policies,
+# either expressed or implied, of the FreeBSD Project.
+
+usage () {
+    cat >&2 <<EOF
+usage: bfhcafw [-h|--help]
+       bfhcafw find
+       bfhcafw flint <FLINT ARGS...>
+       bfhcafw mcra <MCRA ARGS...>
+       bfhcafw bus
+
+Various utilities for ConnectX interface on BlueField systems. Supports the
+following commands:
+
+find    Searches the filesystem for the correct ConnectX firmware image for
+        the current system and prints the full path to it.
+
+flint   Automatically selects the correct flint binary, and passes in the PCI
+        device path for the ConnectX interface.
+
+        bfhcafw flint query
+
+        is equivalent to:
+
+        (mst)flint -d <BF1 or BF2 PCI path> query
+
+mcra    Similar to flint, automatically selects binary and PCI conf path to
+        run mcra.
+
+bus     Prints the PCI bus number for the ConnectX interface.
+EOF
+}
+
+err () {
+    echo "bfhcafw: $@" >&2
+}
+
+BASE_FW_NAME=mlxfwmanager_sriov_dis_aarch64
+
+CHIPNUM_BF1=41682
+CHIPNUM_BF2=41686
+
+get_chipnum () {
+    if ! [ -e /sys/firmware/acpi/tables ]; then
+        err "fatal: cannot find acpi tables"
+        exit 1
+    fi
+
+    # Only two HW revs right now
+    # Figure out which rev by searching for an ACPI table that's only present
+    # on BF2
+    if hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF22; then
+        # BF2
+        chipnum=41686
+    else
+        # BF1
+        chipnum=41682
+    fi
+
+    echo $chipnum
+}
+
+# Set mlxfw filename based on current system
+set_mlxfw_name () {
+    mlxfw_name="${BASE_FW_NAME}_$(get_chipnum)"
+}
+
+# Finds the FW file on the system and sets $mlxfw accordingly.
+# Returns 1 if not found, 0 otherwise.
+find_fw_with_name () {
+    # find the firmware package on the system
+    mlxfw="/opt/mellanox/mlnx-fw-updater/firmware/${mlxfw_name}"
+    [ -f $mlxfw ] && return 0
+
+    # FW package not in /opt/mellanox, we're probably running on yocto
+    mlxfw="/lib/firmware/mellanox/${mlxfw_name}"
+    [ -f $mlxfw ] && return 0
+
+    return 1
+}
+
+find_fw () {
+    if set_mlxfw_name; then
+        # If name set succeeds, we try once with the new name, and then if that
+        # doesn't work, continue to legacy check.
+        find_fw_with_name && return 0
+    fi
+
+    err "warn: falling back to legacy FW filename"
+    mlxfw_name="$BASE_FW_NAME"
+    find_fw_with_name && return 0
+
+    return 1
+}
+
+find_flint () {
+    if command -v mstflint >/dev/null; then
+        echo mstflint
+    elif command -v flint >/dev/null; then
+        echo flint
+    else
+        err "err: cannot find flint executable"
+        exit 1
+    fi
+}
+
+find_mcra () {
+    if command -v mstmcra >/dev/null; then
+        echo mstmcra
+    elif command -v mcra >/dev/null; then
+        echo mcra
+    else
+        err "err: cannot find mcra executable"
+        exit 1
+    fi
+}
+
+get_pci_path () {
+    pci_path="$(lspci | grep '00\.0.*BlueField.*ConnectX' | cut -f1 -d' ')"
+
+    if [ -z "$pci_path" ]; then
+        err "err: cannot get PCI path in livefish mode"
+        exit 1
+    fi
+
+    echo $pci_path
+}
+
+run_flint () {
+    $(find_flint) -d $(get_pci_path) $@
+}
+
+run_mcra () {
+    $(find_mcra) $(get_pci_path) $@
+}
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    usage
+    exit 0
+fi
+
+if [ "$1" = "find" ]; then 
+    if find_fw; then
+        echo "$mlxfw"
+        exit 0
+    else
+        err "err: the firmware package could not be located"
+        exit 1
+    fi
+elif [ "$1" = "flint" ]; then
+    shift
+    run_flint $@
+elif [ "$1" = "mcra" ]; then
+    shift
+    run_mcra $@
+elif [ "$1" = "bus" ]; then
+    shift
+    echo $(get_pci_path)
+else
+    err "err: unknown cmd"
+    usage
+    exit 1
+fi
