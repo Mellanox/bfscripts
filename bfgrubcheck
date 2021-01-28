@@ -1,4 +1,4 @@
-#!/bin/sh -e 
+#!/bin/sh -e
 
 # Copyright (c) 2021, NVIDIA Corporation
 # All rights reserved.
@@ -47,7 +47,7 @@ EOF
 usage()
 {
     cat <<EOF
-Usage: $0 
+Usage: $0
 	[ -h | --help ]
 	[ -g | --grubcfg ] pathname
 EOF
@@ -100,4 +100,3 @@ elif grep -q "password admin BlueField" $GRUBCFGFILE ; then
 fi
 
 exit 0
-
