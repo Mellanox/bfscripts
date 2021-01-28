@@ -1,0 +1,17 @@
+.TH BFGRUBCHECK 8 "January 2021"
+.SH NAME
+bfgrubcheck \- Check if grub default password needs to be changed
+.SH SYNOPSIS
+.B bfgrubcheck
+.RB [ \-h | \-\-help ]
+.RB [ \-g | \-\-grubcfg
+.RI [ PATHNAME ]]
+.SH DESCRIPTION
+A simple utility to force users to change the default grub password.
+.PP
+If the grub config file is not specified this command uses
+.I /boot/grub/grub.cfg
+.SH OPTIONS
+.IP "--grubcfg [PATHNAME]"
+The file specified by PATHNAME is updated with an encrypted password.
+The user must specify the unencrypted password when prompted.

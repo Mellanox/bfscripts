@@ -1,0 +1,103 @@
+#!/bin/sh -e 
+
+# Copyright (c) 2021, NVIDIA Corporation
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# The views and conclusions contained in the software and documentation are those
+# of the authors and should not be interpreted as representing official policies,
+# either expressed or implied, of the FreeBSD Project.
+
+GRUBPASSWDFILE=/tmp/grubpasswd.out
+GRUBPASSWDCMD=grub-mkpasswd-pbkdf2
+GRUBCFGFILE=/boot/grub/grub.cfg
+
+if [ -x /usr/bin/grub2-mkpasswd-pbkdf2 ]; then
+    GRUBPASSWDCMD=grub2-mkpasswd-pbkdf2
+else
+    GRUBPASSWDCMD=grub-mkpasswd-pbkdf2
+fi
+
+update_message()
+{
+    cat <<EOF
+System admin requires GRUB password be changed from factory default.
+EOF
+}
+
+usage()
+{
+    cat <<EOF
+Usage: $0 
+	[ -h | --help ]
+	[ -g | --grubcfg ] pathname
+EOF
+}
+
+PARSED_OPTIONS=$(getopt -n "$0" -o hg: --long help,grubcfg: -- "$@")
+
+eval set -- "$PARSED_OPTIONS"
+
+while true
+do
+  case $1 in
+      -h | --help)
+          usage
+          exit 0
+          ;;
+      -g | --grubcfg)
+          GRUBCFGFILE=$2
+          shift 2
+          ;;
+      --)
+          shift
+          break
+          ;;
+  esac
+done
+
+if [ ! -f "$GRUBCFGFILE" ]; then
+    echo "$GRUBCFGFILE not found"
+    exit 1
+elif grep -q "password admin BlueField" $GRUBCFGFILE ; then
+    update_message
+    rm -f $GRUBPASSWDFILE.tmp
+    rm -f $GRUBPASSWDFILE
+    RET=1
+    until [ ${RET} -eq 0 ]; do
+        $GRUBPASSWDCMD | tee $GRUBPASSWDFILE.tmp
+        if grep -q "grub.pbkdf2" $GRUBPASSWDFILE.tmp ; then
+            RET=0
+        else
+            RET=1
+        fi
+    done
+    tail -n 1 $GRUBPASSWDFILE.tmp > $GRUBPASSWDFILE
+    sed -i -r 's/^.*grub.pbkdf2/grub.pbkdf2/' $GRUBPASSWDFILE
+    export GRUBPASSWD=$(cat $GRUBPASSWDFILE)
+    rm -f $GRUBPASSWDFILE.tmp
+    rm -f $GRUBPASSWDFILE
+    sed -i -e "s/password admin BlueField/password_pbkdf2 admin $GRUBPASSWD/" $GRUBCFGFILE
+fi
+
+exit 0
+
