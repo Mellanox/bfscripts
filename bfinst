@@ -190,8 +190,14 @@ install_grub()
 # See the official grub documentation for more information.
 
 # Set menu colors
-set menu_color_normal=white/blue
-set menu_color_highlight=light-blue/white
+set menu_color_normal=white/green
+set menu_color_highlight=light-green/black
+
+# When the user logs into the system for the first time they
+# will be prompted to change this default password.
+
+set superusers="admin"
+password admin BlueField
 
 # Set menu display time
 set timeout=10
@@ -201,16 +207,16 @@ set default=0
 
 # Boot entries:
 # Yocto
-menuentry "Yocto from eMMC" {
+menuentry "Yocto from eMMC" --unrestricted {
         linux (\$root)/Image $bootarg
 }
 
-menuentry "Yocto from eMMC (kdump)" {
+menuentry "Yocto from eMMC (kdump)" --unrestricted {
         linux (\$root)/Image $bootarg crashkernel=0M-2G:128M,2G-6G:256M,6G-8G:512M,8G-:768M systemd.wants=kdump
 }
 
 # Yocto rescue
-menuentry "Rescue from eMMC" {
+menuentry "Rescue from eMMC" --users "admin" {
         linux (\$root)/Image $rescue_bootarg
         initrd (\$root)/core-image-rescue-initramfs-bluefield.cpio.xz
 }
