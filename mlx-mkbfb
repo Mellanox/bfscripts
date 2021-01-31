@@ -52,18 +52,17 @@ from optparse import OptionParser, OptionGroup
 # Contents: (command-line option, description, image ID for header)
 image_list = (
     # Images for ATF
+    ("psc-bl",    "PSC bootloader image",                  36),
     ("bl2r-cert", "RIoT Core (BL2R) content certificate",  31),
     ("bl2r",      "RIoT Core (BL2R) bin",                  30),
     ("bl2-cert",  "Trusted Boot Firmware BL2 certificate", 6),
     ("bl2",       "Trusted Boot Firmware BL2 bin",         1),
     ("sys",       "Running system's part number or PSID",  29),
-
     ("ddr_ini", "File From Which Will Load DDR (pseudo spd) Parameters", 32),
-
     ("snps_images", "Combined SNPS Images for all DIMM types", 33),
     ("ddr_ate_imem", "Analog Test Engine INSTRUCTIONS", 34),
     ("ddr_ate_dmem", "Analog Test Engine DATA", 35),
-
+    ("psc-fw",    "PSC framework image",                  37),
     ("bl30-key-cert", "SCP Firmware BL3-0 key certificate", 8),
     ("bl30-cert", "SCP Firmware BL3-0 certificate", 12),
     ("bl30", "SCP Firmware BL3-0", 2),
@@ -77,6 +76,7 @@ image_list = (
     ("bl33-key-cert", "Non-Trusted Firmware BL3-3 key certificate", 11),
     ("bl33-cert", "Non-Trusted Firmware BL3-3 content certificate", 15),
     ("bl33", "Non-Trusted Firmware BL3-3 bin", 5),
+
     # Images for UEFI
     ("boot-acpi", "Name of the ACPI table", 55),
     ("boot-dtb", "Name of the dtb file", 56),
