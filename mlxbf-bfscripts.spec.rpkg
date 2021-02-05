@@ -24,7 +24,7 @@ Requires: mlxbf-bootctl
 # Note: mlxbf-bootimages is provided by mlxbf-aarch64-firmware on Fedora.
 Requires: mlxbf-bootimages
 Requires: bash
-Requires: python
+Requires: python3
 Requires: grub2-tools
 Requires: dosfstools
 Requires: e2fsprogs
