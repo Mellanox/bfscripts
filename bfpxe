@@ -99,6 +99,7 @@ EOF
     else
       ifconfig "$ifname" "$ifaddr" ${ifnet:+netmask $ifnet} up
       if [ -n "$TMP_MNT" ]; then
+        sed -i '/Address =/d' "$TMP_MNT"/etc/systemd/network/05-"${ifname}".network
         sed -i '/DHCP =/d' "$TMP_MNT"/etc/systemd/network/05-"${ifname}".network
         echo "Address = ${ifaddr}${ifnet:+$(netmask_to_prefix "$ifnet")}" \
           >> "$TMP_MNT"/etc/systemd/network/05-"${ifname}".network
@@ -128,12 +129,6 @@ if [ -e "$root_device" ]; then
   if [ ! -d $TMP_MNT/bin ]; then
     umount $TMP_MNT 2>/dev/null
     TMP_MNT=
-  else
-    # Delete the default static IP address if bfnet is configured.
-    tmp=$(grep bfnet /proc/cmdline)
-    if [ -n "$tmp" ]; then
-      sed -i '/Address =/d' $TMP_MNT/etc/systemd/network/05-tmfifo_net0.network
-    fi
   fi
 fi
 
