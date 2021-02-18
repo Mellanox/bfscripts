@@ -90,6 +90,11 @@ install -p bfvcheck.service %{buildroot}%{_unitdir}/
 install -p -d %{buildroot}%{_presetdir}
 install -p 80-bfvcheck.preset %{buildroot}%{_presetdir}/
 
+# Install tweak for fwupd on BlueField
+%global fwupdquirkdir %{buildroot}%{_datadir}/fwupd/quirks.d
+install -p -d %{fwupdquirkdir}
+install -p mlx-uefi.quirk %{fwupdquirkdir}/
+
 %post
 %systemd_post bfvcheck.service
 
@@ -107,6 +112,7 @@ install -p 80-bfvcheck.preset %{buildroot}%{_presetdir}/
 %attr(644, root, root) %{_mandir}/man8/*
 %attr(644, root, root) %{_unitdir}/bfvcheck.service
 %attr(644, root, root) %{_presetdir}/80-bfvcheck.preset
+%attr(644, root, root) %{_datadir}/fwupd/quirks.d/mlx-uefi.quirk
 
 %doc README.md
 
