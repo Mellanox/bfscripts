@@ -346,6 +346,23 @@ boot_cfg_add_ipv6()
   done
 }
 
+get_hca_p0_mac()
+{
+  local dev devmac devid p0mac
+
+  p0mac="feffffffffff"
+  for dev in /sys/class/net/*; do
+    [ ! -f ${dev}/device/device ] && continue
+    devid=$(cat ${dev}/device/device)
+    [ ."${devid}" != ."0xa2d2" -a ."${devid}" != ."0xa2d6" ] && continue
+    devmac=$(cat ${dev}/address | sed 's/://g' | tr '[:upper:]' '[:lower:]')
+    if [ "${devmac}" \< "${p0mac}" ]; then
+      p0mac=${devmac}
+    fi
+  done
+  echo "0x${p0mac}"
+}
+
 #
 # Boot Entry configuration
 # Each entry BOOT<N> could have the following format:
@@ -489,16 +506,13 @@ boot_cfg()
         ;;
 
       NIC_P0|NIC_P1)
-        mac=$(bfhcafw flint q 2>/dev/null | grep "^Base MAC" | awk '{print $3}')
+        mac=$(get_hca_p0_mac)
         if [ -z "${mac}" ] || [ ."${mac}" = ."N/A" ]; then
           log_msg "boot: failed to get MAC for ${entry}"
           continue
         fi
-        mac="0x${mac}"
-        if [ "${ifname}" = "NIC_P0" ]; then
-          mac=$((mac + 4))
-        else
-          mac=$((mac + 5))
+        if [ "${ifname}" = "NIC_P1" ]; then
+          mac=$((mac + 1))
         fi
         mac=$(printf '%012x' ${mac})
         # shellcheck disable=SC2116,SC2096,SC2086
