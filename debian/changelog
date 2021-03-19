@@ -1,5 +1,29 @@
-mlxbf-scripts (2.4) UNRELEASED; urgency=medium
+mlxbf-scripts (3.0.beta1-0ubuntu4) focal; urgency=medium
 
-  * Release for 2.4 SDK
+  * Update to commit 51fe49, add manpages
 
- -- Alfonso Sanchez-Beato (email Canonical) <alfonso.sanchez-beato@canonical.com>  Thu, 12 Mar 2020 15:36:39 +0100
+ -- Alfonso Sanchez-Beato (email Canonical) <alfonso.sanchez-beato@canonical.com>  Tue, 06 Oct 2020 11:36:49 +0200
+
+mlxbf-scripts (3.0.beta1-0ubuntu2) focal; urgency=medium
+
+  * Install scripts in /usr/bin
+
+ -- Alfonso Sanchez-Beato (email Canonical) <alfonso.sanchez-beato@canonical.com>  Thu, 16 Jul 2020 10:22:49 +0200
+
+mlxbf-scripts (3.0.beta1-0ubuntu1) focal; urgency=medium
+
+  * Remove bfmisc and add bfauxpwr to installed files
+
+ -- Alfonso Sanchez-Beato (email Canonical) <alfonso.sanchez-beato@canonical.com>  Wed, 15 Jul 2020 19:42:36 +0200
+
+mlxbf-scripts (3.0.beta1) focal; urgency=medium
+
+  * Update to 3.0.beta1
+
+ -- Alfonso Sanchez-Beato (email Canonical) <alfonso.sanchez-beato@canonical.com>  Wed, 15 Jul 2020 19:13:29 +0200
+
+mlxbf-scripts (3.0-0ubuntu1) focal; urgency=medium
+
+  * Release for 3.0 SDK
+
+ -- Alfonso Sanchez-Beato (email Canonical) <alfonso.sanchez-beato@canonical.com>  Mon, 01 Jun 2020 12:54:10 +0200
