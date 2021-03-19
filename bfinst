@@ -171,15 +171,21 @@ install_grub()
     efidir=/mnt/boot
     bootdir=/mnt/boot
     localedir=/mnt/usr/share/locale
-    grubcfg=/mnt/boot/grub/grub.cfg
+    grubdir=/mnt/boot/grub
+    grubcfg=$grubdir/grub.cfg
 
     mount $ROOT_PART /mnt
     mount $EFI_PART /mnt/boot
 
     test "$(ls -A $efivars)" || mount -t efivarfs none $efivars
 
-    mkdir -p $localedir
-    grub-install $EFI_PART --locale-directory=$localedir --efi-directory=$efidir --boot-directory=$bootdir
+    mkdir -p $grubdir
+    if [ -f "/mnt/boot/EFI/BOOT/grubaa64.efi" ]; then
+        bfbootmgr --add "grub" "/EFI/BOOT/grubaa64.efi" ""
+    else
+        mkdir -p $localedir
+        grub-install $EFI_PART --locale-directory=$localedir --efi-directory=$efidir --boot-directory=$bootdir
+    fi
 
     touch $grubcfg
     cat > $grubcfg <<EOF
