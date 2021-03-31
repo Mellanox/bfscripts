@@ -128,9 +128,10 @@ sys_cfg_one_byte()
 #   SYS_DISABLE_SPMI     25            1
 #   SYS_ENABLE_2ND_EMMC  26            1
 #   SYS_BOOT_PROTECT     27            1
-#   SYS_ENABLE_SPCR      31            1
-#   SYS_DISABLE_PCIE     32            1
-#   SYS_ENABLE_OPTEE     33            1
+#   SYS_ENABLE_SPCR      32            1
+#   SYS_DISABLE_PCIE     33            1
+#   SYS_ENABLE_OPTEE     34            1
+#   SYS_ENABLE_I2C0      36            1
 #
 sys_cfg()
 {
@@ -150,9 +151,10 @@ sys_cfg()
   sys_cfg_one_byte ${tmp_file} "DISABLE_SPMI" 25 "${SYS_DISABLE_SPMI}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_2ND_EMMC" 26 "${SYS_ENABLE_2ND_EMMC}"
   sys_cfg_one_byte ${tmp_file} "BOOT_PROTECT" 27 "${SYS_BOOT_PROTECT}"
-  sys_cfg_one_byte ${tmp_file} "ENABLE_SPCR" 31 "${SYS_ENABLE_SPCR}"
-  sys_cfg_one_byte ${tmp_file} "DISABLE_PCIE" 32 "${SYS_DISABLE_PCIE}"
-  sys_cfg_one_byte ${tmp_file} "ENABLE_OPTEE" 33 "${SYS_ENABLE_OPTEE}"
+  sys_cfg_one_byte ${tmp_file} "ENABLE_SPCR" 32 "${SYS_ENABLE_SPCR}"
+  sys_cfg_one_byte ${tmp_file} "DISABLE_PCIE" 33 "${SYS_DISABLE_PCIE}"
+  sys_cfg_one_byte ${tmp_file} "ENABLE_OPTEE" 34 "${SYS_ENABLE_OPTEE}"
+  sys_cfg_one_byte ${tmp_file} "ENABLE_I2C0" 36 "${SYS_ENABLE_I2C0}"
 
   if [ ${has_change} -eq 1 ]; then
     chattr -i ${sys_cfg_sysfs}
