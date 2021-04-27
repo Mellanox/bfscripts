@@ -59,6 +59,12 @@ mfg_cfg()
     return
   fi
 
+  if [ -n "${MFG_OOB_MAC}" -a -z "${MFG_OPN_STR}" ] ||
+     [ -z "${MFG_OOB_MAC}" -a -n "${MFG_OPN_STR}" ]; then
+    echo "ERROR: both MFG_OOB_MAC and MFG_OPN_STR must be specified"
+    echo "       in order to write information to the MFG partition."
+  fi
+
   if [ -n "${MFG_OOB_MAC}" ] && [ -e "${oob_mac_sysfs}" ] && [ -n "${MFG_OPN_STR}" ] && [ -e "${opn_str_sysfs}" ]; then
     log_msg "mfg: OOB_MAC=${MFG_OOB_MAC}"
     echo "${MFG_OOB_MAC}" > ${oob_mac_sysfs} 2>>${log_file}
