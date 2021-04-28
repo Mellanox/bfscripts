@@ -41,6 +41,8 @@ efi_vlan_var_guid=9e23d768-d2f3-4366-9fc3-3a7aba864374
 rshim_efi_mac_sysfs=${efivars}/RshimMacAddr-${efi_global_var_guid}
 oob_mac_sysfs=/sys/bus/platform/drivers/mlx-bootctl/oob_mac
 
+ECHO=${ECHO:-echo}
+
 log_msg()
 {
   echo "$@" >> ${log_file}
@@ -57,6 +59,12 @@ mfg_cfg()
     [ -e "${oob_mac_sysfs}" ] && echo "mfg: MFG_OOB_MAC=$(cat ${oob_mac_sysfs} 2>/dev/null)"
     [ -e "${opn_str_sysfs}" ] && echo "mfg: MFG_OPN_STR=$(cat ${opn_str_sysfs} 2>/dev/null)"
     return
+  fi
+
+  if [ -n "${MFG_OOB_MAC}" -a -z "${MFG_OPN_STR}" ] ||
+     [ -z "${MFG_OOB_MAC}" -a -n "${MFG_OPN_STR}" ]; then
+    ${ECHO} "ERROR: both MFG_OOB_MAC and MFG_OPN_STR must be specified"
+    ${ECHO} "       in order to write information to the MFG partition."
   fi
 
   if [ -n "${MFG_OOB_MAC}" ] && [ -e "${oob_mac_sysfs}" ] && [ -n "${MFG_OPN_STR}" ] && [ -e "${opn_str_sysfs}" ]; then
