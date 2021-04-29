@@ -64,9 +64,9 @@ elif [ "$bfversion" = $BF2_PLATFORM_ID ]; then
         ["Camelantis"]="MBF2H512C"
         ["Aztlan"]="MBF2(H51|M51|H53)6C"
         ["OVH"]="SSN4MELX100200"
-        ["Dell Camelantis"]="0JNDCM"
+        ["Dell-Camelantis"]="0JNDCM"
     )
-    PART_NUMBER=$(bfhcafw flint dc | grep -m1 "name =" | cut -f 3 -d " ")
+    PART_NUMBER=$(bfhcafw flint q full | grep "Part Number:" | cut -f 2 -d ":" | xargs)
 else
     echo "Unknown platform"
     exit 1
