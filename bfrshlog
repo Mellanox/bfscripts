@@ -29,9 +29,10 @@
 
 rshlog_path="/sys/devices/platform/MLNXBF04:00/driver/rsh_log"
 
-if [ -e "${rshlog_path}" ]; then
-  echo "$*" > "${rshlog_path}"
-else
-  echo "$*"
-fi
+[ ! -e "${rshlog_path}" ] && exit
 
+if [ $# -eq 0 ]; then
+  cat "${rshlog_path}" 2>/dev/null
+else
+  echo "$*" > "${rshlog_path}"
+fi
