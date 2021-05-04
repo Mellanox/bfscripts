@@ -8,6 +8,8 @@ bfrec \- Install boot firmware to the bluefield eMMC
 .RI [ FILE ]]
 .RB [ \-\-capsule
 .RI [ FILE ]]
+.RB [ \-\-policy
+.IR POLICY ]
 .SH DESCRIPTION
 Installs boot firmware FILE to the bluefield eMMC with one of two methods,
 as described in
@@ -24,3 +26,7 @@ utility.
 .IP "--capsule [FILE]"
 Set up a UEFI capsule install using FILE. The installation will take place
 after reboot.
+.IP "--policy POLICY"
+Sets the update policy. May be either "single" or "dual". "single" will
+update only the secondary boot partition and swap to it. "dual" will update
+both at once. The default is "single".

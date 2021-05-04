@@ -51,6 +51,14 @@ Description:
                           capsule path. If FILE isn't specified,
                           /lib/firmware/mellanox/boot/capsule/MmcBootCap
                           will be used by default.
+  --policy POLICY       : determines the update policy. may be:
+                            single - updates the secondary partition and
+                                     swaps to it
+                            dual   - updates both boot partitions, does not
+                                     swap
+
+                          if this flag is not specified, 'single' policy is
+                          assumed.
 EOF
     exit 0
 }
@@ -58,7 +66,7 @@ EOF
 bootctl_mode=
 capsule_mode=
 
-PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o h -l help,bootctl,capsule -- "$@")
+PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o h -l help,bootctl,capsule,policy: -- "$@")
 eval set -- "$PARSED_OPTIONS"
 
 while true
@@ -74,6 +82,10 @@ do
       --capsule)
           capsule_mode=1
           shift
+          ;;
+      --policy)
+          policy=$2
+          shift 2
           ;;
       --)
           shift
@@ -179,7 +191,11 @@ uefi_capsule_update()
     # order once the capsule flag is set in the 'OsIndications' variable
     # which is done by the printf command below.
     $run mkdir -p "$mount_efi/EFI/UpdateCapsule" 2>/dev/null
-    $run cp $capsule_file "$mount_efi/EFI/UpdateCapsule/$capsule_efi"
+    $run cp $capsule_file "$mount_efi/EFI/UpdateCapsule/${capsule_efi}1"
+    if [ "$policy" = "dual" ]; then
+        $run cp $capsule_file "$mount_efi/EFI/UpdateCapsule/${capsule_efi}2"
+    fi
+
     $run printf "\x07\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00" > \
         "${efivars}/${os_var}"
     $run sync
@@ -233,7 +249,10 @@ kernel_bootctl_update()
     fi
 
     $run /sbin/mlxbf-bootctl -s -d $bfb_device -b $bfb_file
-    $run /sbin/mlxbf-bootctl -s -d $bfb_device -b $bfb_file
+    if [ "$policy" = "dual" ]; then
+        # in dual case, run command again to update both partitions
+        $run /sbin/mlxbf-bootctl -s -d $bfb_device -b $bfb_file
+    fi
     $run sync
 
     cat <<EOF
@@ -264,6 +283,15 @@ if [ -n "$bootctl_mode" ] || [ -n "$capsule_mode" ]; then
         bfb_file=$1
 	capsule_file=$1
     fi
+fi
+
+if [ -n "$policy" ]; then
+    if [ "$policy" != "single" ] && [ "$policy" != "dual" ]; then
+        echo "ERROR: policy must be either 'single' or 'dual'"
+        exit 1
+    fi
+else # default policy
+    policy="single"
 fi
 
 if [ -n "$bootctl_mode" ]; then
