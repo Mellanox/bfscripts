@@ -3,11 +3,17 @@
 bfver \- Print bluefield software version information
 .SH SYNOPSIS
 .B bfver
+.RB [ \-\-help | \-h ]
+.RB [ \-\-part | \-p
+.IR PARTITIONS ]
 .SH DESCRIPTION
 Print the version of the ATF and UEFI firmware currently installed to
 the chip's eMMC, as well as the installed version of the Yocto filesystem, if
 present. The user running this script must have read access to
 .IR /dev/mmcblk0* .
 .SH OPTIONS
-.B bfver
-accepts no options.
+.IP "--part | -p PARTITIONS"
+Print version information for all boot partitions specified in a
+comma-delimited list. For example, "-p0,1" will print bootloader versions for
+partition 0, and then partition 1. "-p1" will print only partition 1. If -p
+is not specified, then current primary partition will be printed.

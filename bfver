@@ -27,24 +27,90 @@
 # of the authors and should not be interpreted as representing official policies,
 # either expressed or implied, of the FreeBSD Project.
 
+PROGNAME=$(basename "$0")
 TMP_DIR=$(mktemp -d)
-CURRENT_BFB=$TMP_DIR/"current.bfb"
+trap "rm -rf $TMP_DIR" EXIT
+trap "rm -rf $TMP_DIR; exit 1" SIGTERM SIGINT
 
-rm -rf "$TMP_DIR"
-# Create a temporary folder for the generated files
-mkdir "$TMP_DIR"
+usage ()
+{
+    cat <<EOF
+Usage: $PROGNAME [--help|-h]
+       $PROGNAME [--part|-p PARTITIONS]
 
-# Identify current primary boot partition
-DEV_PATH=$(mlxbf-bootctl | grep "primary" | cut -d ' ' -f 2)
+Prints version information for currently installed software.
 
-# Retrieve default.bfb from the eMMC
-mlxbf-bootctl -r "$DEV_PATH" -b "$CURRENT_BFB"
+Options:
+  --help,-h              print this message
+  --part,-p PARTITIONS   print version information for all boot partitions
+                         specified in a comma-delimited list. For example,
+                         "-p0,1" will print bootloader versions for
+                         partition 0, and then partition 1. "-p1" will
+                         print only partition 1. If -p is not specified,
+                         the current primary partition will be printed.
+EOF
+}
 
-# Find and print the ATF version of current bfb
-echo BlueField ATF version: "$(strings "$CURRENT_BFB" | grep -m 1 "(\(release\|debug\))")"
+print_bootloader_ver () {
+    DEV_PATH=$1
+    CURRENT_BFB=$TMP_DIR/"current${PARTITION}.bfb"
 
-# Find and print the UEFI of current bfb
-echo BlueField UEFI version: "$(strings -e l "$CURRENT_BFB" | grep "BlueField" | cut -d':' -f 2)"
+    rm -rf "$TMP_DIR"
+    # Create a temporary folder for the generated files
+    mkdir "$TMP_DIR"
+
+    # Retrieve default.bfb from the eMMC
+    mlxbf-bootctl -r "$DEV_PATH" -b "$CURRENT_BFB" 2>&1 >/dev/null
+
+    echo "--$DEV_PATH"
+
+    # Find and print the ATF version of current bfb
+    echo BlueField ATF version: "$(strings "$CURRENT_BFB" | grep -m 1 "(\(release\|debug\))")"
+
+    # Find and print the UEFI of current bfb
+    echo BlueField UEFI version: "$(strings -e l "$CURRENT_BFB" | grep "BlueField" | cut -d':' -f 2)"
+}
+
+
+PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o hp: -l help,part: -- "$@")
+eval set -- "$PARSED_OPTIONS"
+
+PARTLIST=
+
+while true
+do
+    case $1 in
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        -p | --part)
+            PARTLIST="$2"
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+    esac
+done
+
+# Print bootloader versions
+if [ -z "$PARTLIST" ]; then
+    # Identify current primary boot partition and print versions
+    print_bootloader_ver $(mlxbf-bootctl | grep "primary" | cut -d ' ' -f 2)
+else
+    for part in $(echo $PARTLIST | cut -d"," -f1- --output-delimiter=" "); do
+        if [ "$part" -ne 0 ] && [ "$part" -ne 1 ]; then
+            echo "$PROGNAME: err: bad partition $part" >&2
+            continue
+        fi
+
+        print_bootloader_ver /dev/mmcblk0boot$part
+    done
+fi
+
+echo
 
 # Print BlueField version number if Yocto version file is present
 if [ -e "/etc/bluefield_version" ]; then
@@ -52,6 +118,3 @@ if [ -e "/etc/bluefield_version" ]; then
 else
 	echo No Yocto version file present
 fi
-
-# Remove temporary directory
-rm -rf "$TMP_DIR"
