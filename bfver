@@ -53,11 +53,7 @@ EOF
 
 print_bootloader_ver () {
     DEV_PATH=$1
-    CURRENT_BFB=$TMP_DIR/"current${PARTITION}.bfb"
-
-    rm -rf "$TMP_DIR"
-    # Create a temporary folder for the generated files
-    mkdir "$TMP_DIR"
+    CURRENT_BFB="$TMP_DIR/$(basename $DEV_PATH).bfb"
 
     # Retrieve default.bfb from the eMMC
     mlxbf-bootctl -r "$DEV_PATH" -b "$CURRENT_BFB" 2>&1 >/dev/null
