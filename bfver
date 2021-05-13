@@ -30,7 +30,7 @@
 PROGNAME=$(basename "$0")
 TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
-trap "rm -rf $TMP_DIR; exit 1" SIGTERM SIGINT
+trap "rm -rf $TMP_DIR; exit 1" TERM INT
 
 usage ()
 {
