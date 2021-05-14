@@ -30,7 +30,7 @@
 # shellcheck disable=SC2059
 true
 
-bfcfg_version=0.2
+bfcfg_version=0.3
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
 dump_mode=0
@@ -39,7 +39,8 @@ efivars=/sys/firmware/efi/efivars
 efi_global_var_guid=8be4df61-93ca-11d2-aa0d-00e098032b8c
 efi_vlan_var_guid=9e23d768-d2f3-4366-9fc3-3a7aba864374
 rshim_efi_mac_sysfs=${efivars}/RshimMacAddr-${efi_global_var_guid}
-oob_mac_sysfs=/sys/bus/platform/drivers/mlx-bootctl/oob_mac
+mfg_sysfs_dir=/sys/bus/platform/drivers/mlx-bootctl
+oob_mac_sysfs=${mfg_sysfs_dir}/oob_mac
 
 ECHO=${ECHO:-echo}
 
@@ -48,54 +49,130 @@ log_msg()
   echo "$@" >> ${log_file}
 }
 
+mfg_lock()
+{
+  log_msg "mfg: lock the partition"
+  echo 1 > ${mfg_sysfs_dir}/mfg_lock 2>>${log_file}
+}
+
 mfg_cfg()
 {
   local tmp_file=/tmp/.bfcfg-mfg-data
-  local opn_str_sysfs=/sys/bus/platform/drivers/mlx-bootctl/opn_str
+  local opn_sysfs=${mfg_sysfs_dir}/opn
+  local sku_sysfs=${mfg_sysfs_dir}/sku
+  local modl_sysfs=${mfg_sysfs_dir}/modl
+  local sn_sysfs=${mfg_sysfs_dir}/sn
+  local uuid_sysfs=${mfg_sysfs_dir}/uuid
   local oob_efi_mac_sysfs=${efivars}/OobMacAddr-${efi_global_var_guid}
   local mac_err opn_err mac
 
   if [ $dump_mode -eq 1 ]; then
     [ -e "${oob_mac_sysfs}" ] && echo "mfg: MFG_OOB_MAC=$(cat ${oob_mac_sysfs} 2>/dev/null)"
-    [ -e "${opn_str_sysfs}" ] && echo "mfg: MFG_OPN_STR=$(cat ${opn_str_sysfs} 2>/dev/null)"
+    [ -e "${opn_sysfs}" ] && echo "mfg: MFG_OPN=$(cat ${opn_sysfs} 2>/dev/null)"
+    [ -e "${sku_sysfs}" ] && echo "mfg: MFG_SKU=$(cat ${sku_sysfs} 2>/dev/null)"
+    [ -e "${modl_sysfs}" ] && echo "mfg: MFG_MODL=$(cat ${modl_sysfs} 2>/dev/null)"
+    [ -e "${sn_sysfs}" ] && echo "mfg: MFG_SN=$(cat ${sn_sysfs} 2>/dev/null)"
+    [ -e "${uuid_sysfs}" ] && echo "mfg: MFG_UUID=$(cat ${uuid_sysfs} 2>/dev/null)"
     return
   fi
 
-  if [ -n "${MFG_OOB_MAC}" -a -z "${MFG_OPN_STR}" ] ||
-     [ -z "${MFG_OOB_MAC}" -a -n "${MFG_OPN_STR}" ]; then
-    ${ECHO} "ERROR: both MFG_OOB_MAC and MFG_OPN_STR must be specified"
-    ${ECHO} "       in order to write information to the MFG partition."
+  if [ -z "${MFG_OOB_MAC}" ] || [ -z "${MFG_OPN}" ] || [ -z "${MFG_SKU}" ] ||
+     [ -z "${MFG_MODL}" ] || [ -z "${MFG_SN}" ] || [ -z "${MFG_UUID}" ]; then
+    log_msg "mfg: skip mfg since one or more of the following are unspecified:"
+    log_msg "     MFG_OOB_MAC, MFG_OPN, MFG_SKU, MFG_MODL, MFG_SN, MFG_UUID"
+    return
   fi
 
-  if [ -n "${MFG_OOB_MAC}" ] && [ -e "${oob_mac_sysfs}" ] && [ -n "${MFG_OPN_STR}" ] && [ -e "${opn_str_sysfs}" ]; then
+  if [ -n "${MFG_OOB_MAC}" ] && [ -e "${oob_mac_sysfs}" ]; then
     log_msg "mfg: OOB_MAC=${MFG_OOB_MAC}"
     echo "${MFG_OOB_MAC}" > ${oob_mac_sysfs} 2>>${log_file}
     mac_err=$?
 
-    log_msg "mfg: OPN_STR=${MFG_OPN_STR}"
-    echo "${MFG_OPN_STR}" > ${opn_str_sysfs} 2>>${log_file}
+    if [ ${mac_err} -eq 0 ]; then
+      log_msg "mfg: oob_mac written"
+
+      # Update the MAC address in UEFI variable.
+      # Somehow 'printf' into the sysfs file doesn't always work, probably
+      # due to length check of each write. A temporary file is used here
+      # to workaround such issue.
+      mac="${MFG_OOB_MAC//:/\\x}"
+      mac="\\x07\\x00\\x00\\x00\\x${mac}"
+      printf "${mac}" > ${tmp_file}
+      chattr -i ${oob_efi_mac_sysfs} 2>/dev/null
+      cp ${tmp_file} ${oob_efi_mac_sysfs}
+      rm -f ${tmp_file}
+    else
+      log_msg "mfg: mac_err=${mac_err}"
+      return
+    fi
+  fi
+
+  if [ -n "${MFG_OPN}" ] && [ -e "${opn_sysfs}" ]; then
+    log_msg "mfg: OPN=${MFG_OPN}"
+    echo "${MFG_OPN}" > ${opn_sysfs} 2>>${log_file}
     opn_err=$?
 
-    if [ ${mac_err} -eq 0 ] && [ ${opn_err} -eq 0 ]; then
-      log_msg "mfg: lock the partition"
-      echo 1 > /sys/bus/platform/drivers/mlx-bootctl/mfg_lock 2>>${log_file}
+    if [ ${opn_err} -eq 0 ]; then
+      log_msg "mfg: opn written"
     else
-      log_msg "mfg: mac_err=${mac_err} opn_err=${opn_err}"
+      log_msg "mfg: opn_err=${opn_err}"
+      return
     fi
-
-    # Update the MAC address in UEFI variable.
-    # Somehow 'printf' into the sysfs file doesn't always work, probably
-    # due to length check of each write. A temporary file is used here
-    # to workaround such issue.
-    mac="${MFG_OOB_MAC//:/\\x}"
-    mac="\\x07\\x00\\x00\\x00\\x${mac}"
-    printf "${mac}" > ${tmp_file}
-    chattr -i ${oob_efi_mac_sysfs} 2>/dev/null
-    cp ${tmp_file} ${oob_efi_mac_sysfs}
-    rm -f ${tmp_file}
-  else
-    log_msg "mfg: skip"
   fi
+
+  if [ -n "${MFG_SKU}" ] && [ -e "${sku_sysfs}" ]; then
+    log_msg "mfg: SKU=${MFG_SKU}"
+    echo "${MFG_SKU}" > ${sku_sysfs} 2>>${log_file}
+    sku_err=$?
+
+    if [ ${sku_err} -eq 0 ]; then
+      log_msg "mfg: sku written"
+    else
+      log_msg "mfg: sku_err=${sku_err}"
+      return
+    fi
+  fi
+
+  if [ -n "${MFG_MODL}" ] && [ -e "${modl_sysfs}" ]; then
+    log_msg "mfg: MODL=${MFG_MODL}"
+    echo "${MFG_MODL}" > ${modl_sysfs} 2>>${log_file}
+    modl_err=$?
+
+    if [ ${modl_err} -eq 0 ]; then
+      log_msg "mfg: modl written"
+    else
+      log_msg "mfg: modl_err=${modl_err}"
+      return
+    fi
+  fi
+
+  if [ -n "${MFG_SN}" ] && [ -e "${sn_sysfs}" ]; then
+    log_msg "mfg: SN=${MFG_SN}"
+    echo "${MFG_SN}" > ${sn_sysfs} 2>>${log_file}
+    sn_err=$?
+
+    if [ ${sn_err} -eq 0 ]; then
+      log_msg "mfg: sn written"
+    else
+      log_msg "mfg: sn_err=${sn_err}"
+      return
+    fi
+  fi
+
+  if [ -n "${MFG_UUID}" ] && [ -e "${uuid_sysfs}" ]; then
+    log_msg "mfg: UUID=${MFG_UUID}"
+    echo "${MFG_UUID}" > ${uuid_sysfs} 2>>${log_file}
+    uuid_err=$?
+
+    if [ ${uuid_err} -eq 0 ]; then
+      log_msg "mfg: uuid written"
+    else
+      log_msg "mfg: uuid_err=${uuid_err}"
+      return
+    fi
+  fi
+
+  mfg_lock
 }
 
 #
