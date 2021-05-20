@@ -2,19 +2,14 @@
 
 Summary: Utility scripts for managing Mellanox BlueField hardware
 Name: mlxbf-bfscripts
-Version: 3.0.0~beta1
+Version: 3.6.0
 URL: https://github.com/Mellanox/bfscripts
-Release: 3%{?dist}
+Release: 1%{?dist}
 License: BSD
 
 BuildArch: noarch
 
-# Source is created by:
-# git clone https://github.com/Mellanox/bfscripts
-# cd bfscripts
-# git checkout 56a22690f9a7223261ffa70bcb9b3ae8d26021cc
-# rpkg spec --sources
-Source: mlxbf-bfscripts-3.0.0~beta1.tar.gz
+Source: mlxbf-bfscripts-%{version}.tar.gz
 
 BuildRequires: systemd-rpm-macros
 BuildRequires: python3-devel
@@ -119,6 +114,9 @@ install -p mlx-uefi.quirk %{fwupdquirkdir}/
 %doc README.md
 
 %changelog
+* Thu May 20 2021 Spencer Lingard <spencer@nvidia.com> - 3.6.0-1
+- Update version number to 3.6.0-1
+
 * Fri Jul 24 2020 Spencer Lingard <Spencer@nvidia.com> - 3.0.0~beta1-3
 - Add -p to all install invocations
 - Change __install macro to just install
