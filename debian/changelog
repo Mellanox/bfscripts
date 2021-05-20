@@ -1,3 +1,9 @@
+mlxbf-scripts (3.6) unstable; urgency=medium
+
+  * Update version number to match package version
+
+ -- Spencer Lingard <spencer@nvidia.com>  Thu, 20 May 2021 13:56:51 -0400
+
 mlxbf-scripts (2.4) UNRELEASED; urgency=medium
 
   * Release for 2.4 SDK
