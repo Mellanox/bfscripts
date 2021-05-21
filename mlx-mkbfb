@@ -58,6 +58,7 @@ image_list = (
     ("bl2-cert",  "Trusted Boot Firmware BL2 certificate", 6),
     ("bl2",       "Trusted Boot Firmware BL2 bin",         1),
     ("sys",       "Running system's part number or PSID",  29),
+    ("ddr-cert",  "DDR Images Content Certificate",        38),
     ("ddr_ini", "File From Which Will Load DDR (pseudo spd) Parameters", 32),
     ("snps_images", "Combined SNPS Images for all DIMM types", 33),
     ("ddr_ate_imem", "Analog Test Engine INSTRUCTIONS", 34),
