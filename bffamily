@@ -61,10 +61,12 @@ elif [ "$bfversion" = $BF2_PLATFORM_ID ]; then
         ["BlueForce"]="BLUEFORCE_IPN"
         ["BlueSphere"]="(MBS2M512(A|C)|BS2M512A)"
         ["PRIS"]="699210020215"
-        ["Camelantis"]="MBF2H512C"
+        ["Camelantis"]="MBF2H5(1|3)2C"
         ["Aztlan"]="MBF2(H51|M51|H53)6C"
         ["OVH"]="SSN4MELX100200"
         ["Dell-Camelantis"]="0JNDCM"
+        ["El-Dorado"]="MBF2M355A"
+        ["Roy"]="6992100402(05|06|30|31)"
     )
     PART_NUMBER=$(bfhcafw flint q full | grep "Part Number:" | cut -f 2 -d ":" | xargs)
 else

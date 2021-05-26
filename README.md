@@ -5,7 +5,7 @@ A public collection of useful scripts to help manage the Mellanox BlueField
 SoC.
 
 Overview of each file:
-- **bfacpievt** Config ACPI daemon to handle AUX power mode and reset events.
+- **bfacpievt** Config ACPI daemon to handle AUX power mode.
 - **bfbootmgr** Change boot options.
 - **bfcfg** Processes a config file passed over the rshim device.
 - **bfcpu-freq** Display Arm core frequency.

@@ -6,18 +6,11 @@ bfacpievt \- Create configuration files to handle acpi events.
 .RB [ \-\-help | \-h ]
 .PP
 .B bfacpievt --update-acpi-low-pwr
-.PP
-.B bfacpievt --update-acpi-rst
 .SH DESCRIPTION
 Create configuration files to handle acpi events. Currently, this script is
-only applicable to OCP 3.0 to handle low power mode and the BlueSphere card
-to trigger reboot.
+only applicable to OCP 3.0 to handle low power mode.
 .SH OPTIONS
 .IP --update-low-pwr
 Disable power button event handling in systemd, and configure the ACPI daemon
 to handle AUX power events by powering up/down all secondary cores. This option
 is only valid for the OCP 3.0 card.
-.IP --update-reset
-Disable power button event handling in systemd, and configure the ACPI daemon
-to handle reset events by rebooting the BlueField-2. This option is only valid
-for rhe BlueSphere.
