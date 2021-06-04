@@ -75,10 +75,13 @@ do
   esac
 done
 
+# Default password is "BlueField".
+DEFAULT_PASSWORD="password_pbkdf2 admin grub.pbkdf2.sha512.10000.5EB1FF92FDD89BDAF3395174282C77430656A6DBEC1F9289D5F5DAD17811AD0E2196D0E49B49EF31C21972669D180713E265BB2D1D4452B2EA9C7413C3471C53.F533423479EE7465785CC2C79B637BDF77004B5CC16C1DDE806BCEA50BF411DE04DFCCE42279E2E1F605459F1ABA3A0928CE9271F2C84E7FE7BF575DC22935B1"
+
 if [ ! -f "$GRUBCFGFILE" ]; then
     echo "$GRUBCFGFILE not found"
     exit 1
-elif grep -q "password admin BlueField" $GRUBCFGFILE ; then
+elif grep -q "$DEFAULT_PASSWORD" $GRUBCFGFILE ; then
     update_message
     rm -f $GRUBPASSWDFILE.tmp
     rm -f $GRUBPASSWDFILE
@@ -96,7 +99,7 @@ elif grep -q "password admin BlueField" $GRUBCFGFILE ; then
     export GRUBPASSWD=$(cat $GRUBPASSWDFILE)
     rm -f $GRUBPASSWDFILE.tmp
     rm -f $GRUBPASSWDFILE
-    sed -i -e "s/password admin BlueField/password_pbkdf2 admin $GRUBPASSWD/" $GRUBCFGFILE
+    sed -i -e "s/password_pbkdf2 admin.*$/password_pbkdf2 admin $GRUBPASSWD/" $GRUBCFGFILE
 fi
 
 exit 0
