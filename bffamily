@@ -65,7 +65,7 @@ elif [ "$bfversion" = $BF2_PLATFORM_ID ]; then
         ["Aztlan"]="MBF2(H51|M51|H53)6C"
         ["OVH"]="SSN4MELX100200"
         ["Dell-Camelantis"]="0JNDCM"
-        ["El-Dorado"]="MBF2M355A"
+        ["El-Dorado"]="MBF2M3(4|5)5A"
         ["Roy"]="6992100402(05|06|30|31)"
     )
     PART_NUMBER=$(bfhcafw flint q full | grep "Part Number:" | cut -f 2 -d ":" | xargs)
