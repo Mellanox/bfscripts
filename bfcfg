@@ -435,14 +435,18 @@ boot_cfg_add_ipv6()
 
 get_hca_p0_mac()
 {
-  local dev devmac devid p0mac
+  local dev devmac devid p0mac devmac_oui
 
+  base_mac=$(bfhcafw flint q 2>/dev/null | grep "^Base MAC" | awk '{print $3}')
+  base_mac=$(echo $base_mac | cut -c1-6)
   p0mac="feffffffffff"
   for dev in /sys/class/net/*; do
     [ ! -f ${dev}/device/device ] && continue
     devid=$(cat ${dev}/device/device)
     [ ."${devid}" != ."0xa2d2" -a ."${devid}" != ."0xa2d6" ] && continue
     devmac=$(cat ${dev}/address | sed 's/://g' | tr '[:upper:]' '[:lower:]')
+    devmac_oui=$(echo ${devmac} | cut -c1-6)
+    [ ."${base_mac}" != ."$devmac_oui" ] && continue
     if [ "${devmac}" \< "${p0mac}" ]; then
       p0mac=${devmac}
     fi
