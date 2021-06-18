@@ -358,16 +358,36 @@ boot_cfg_add_name()
 # shellcheck disable=SC2140
 boot_cfg_add_pcie()
 {
-  printf \
-"\\x02\\x01\\x0c\\x00\\xd0\\x41\\x03\\x0a\\x00\\x00\\x00\\x00"\
-"\\x01\\x01\\x06\\x00\\x00\\x00\\x01\\x01\\x06\\x00\\x00\\x00"\
-"\\x01\\x01\\x06\\x00\\x00\\x02\\x01\\x01\\x06\\x00" >> "$1"
-  if [ "$2" = "NIC_P0" ]; then
-    printf "\\x00" >> "$1"
-  else
-    printf "\\x01" >> "$1"
+  local idx address dev_id func_id dev_path cnt
+
+  # Get PCI path
+  dev_path=$(lspci -t | head -n 1 | grep -o "[0-9][0-9]\.[0-9]*")
+  if [ -z "${dev_path}" ]; then
+    ${ECHO} "Failed to find device path"
+    return
   fi
-  printf "\\x00" >> "$1"
+
+  # PciRoot
+  printf "\\x02\\x01\\x0c\\x00\\xd0\\x41\\x03\\x0a\\x00\\x00\\x00\\x00" >> "$1"
+
+  idx=1
+  cnt=$(echo ${dev_path} | wc -w)
+  for address in ${dev_path}; do
+    # Type(1B)/SubType(1B)/Len(2B)
+    printf "\\x01\\x01\\x06\\x00" >> "$1"
+
+    # Get DevId and FuncId
+    dev_id=$(echo ${address} | tr '.' ' ' | awk '{print $1}')
+    func_id=$(echo ${address} | tr '.' ' ' | awk '{print $2}')
+
+    # Adjust FuncId for P1
+    if [ "$idx" -eq ${cnt} -a "$2" = "NIC_P1" ]; then
+      func_id=$((func_id + 1))
+    fi
+
+    printf "\\x${func_id}\\x${dev_id}" >> "$1"
+    idx=$((idx + 1))
+  done
 }
 
 #
