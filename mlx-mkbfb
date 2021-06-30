@@ -79,6 +79,7 @@ image_list = (
     ("bl33", "Non-Trusted Firmware BL3-3 bin", 5),
 
     # Images for UEFI
+    ("capsule", "UEFI capsule image", 52),
     ("boot-acpi", "Name of the ACPI table", 55),
     ("boot-dtb", "Name of the dtb file", 56),
     ("boot-desc", "Default boot menu item description", 57),
@@ -86,7 +87,6 @@ image_list = (
     ("boot-args", "Arguments for boot image", 59),
     ("boot-timeout", "Boot menu timeout", 60),
     ("uefi-tests", "Specify what UEFI tests to run", 61),
-    ("capsule", "UEFI capsule image", 52),
     ("ramdisk", "RAM Disk image", 54),
     ("image", "Boot image", 62),
     ("initramfs", "In-memory filesystem", 63),
