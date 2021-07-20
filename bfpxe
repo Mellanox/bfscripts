@@ -52,13 +52,20 @@ netmask_to_prefix() {
 #
 create_net() {
   bfnet=""
+  bfmac=""
   eval "$1"
-
-  if [ -n "$bfnet" ]; then
-    ifname=$(echo $bfnet | cut -d: -f1)
-    ifaddr=$(echo $bfnet | cut -d: -f2)
-    ifnet=$(echo $bfnet | cut -d: -f3)
-
+  if [ -n "$bfnet" || -n "$bfmac" ]; then
+    if [ -n "$bfnet" ]; then
+        ifname=$(echo $bfnet | cut -d: -f1)
+        ifaddr=$(echo $bfnet | cut -d: -f2)
+        ifnet=$(echo $bfnet | cut -d: -f3)
+    fi
+    if [ -n "$bfmac" ]; then
+        realbfmac=$(echo $bfmac | cut -d: -f1 | tr '-' ':')
+        ifname=$(grep $realbfmac /sys/class/net/*/address | awk -F\/ {'print $5'})
+        ifaddr=$(echo $bfmac | cut -d: -f2)
+        ifnet=$(echo $bfmac | cut -d: -f3)
+    fi
     # vlan check
     if echo "$ifname" | grep -q -E ".+\..+" >/dev/null; then
       vname=$(echo "$ifname" | cut -d. -f1)
@@ -142,7 +149,7 @@ fi
 # shellcheck disable=SC2013
 for i in $(cat /proc/cmdline); do
   # Network config.
-  if [ "$(echo "$i" | cut -c1-6)" = "bfnet=" ]; then
+  if [ "$(echo "$i" | cut -c1-6)" = "bfnet=" || "$(echo "$i" | cut -c1-6)" = "bfmac=" ]; then
     create_net "$i"
   fi
 
