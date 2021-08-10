@@ -39,6 +39,7 @@ efivars=/sys/firmware/efi/efivars
 efi_global_var_guid=8be4df61-93ca-11d2-aa0d-00e098032b8c
 efi_vlan_var_guid=9e23d768-d2f3-4366-9fc3-3a7aba864374
 rshim_efi_mac_sysfs=${efivars}/RshimMacAddr-${efi_global_var_guid}
+pxe_dhcp_class_id_sysfs=${efivars}/DhcpClassId-${efi_global_var_guid}
 mfg_sysfs_dir=/sys/bus/platform/drivers/mlx-bootctl
 oob_mac_sysfs=${mfg_sysfs_dir}/oob_mac
 
@@ -252,22 +253,45 @@ sys_cfg()
 
 misc_cfg()
 {
-  # Rshim MAC address.
-  local mac
+  local mac value
   local tmp_file=/tmp/.bfcfg-misc-data
 
   if [ $dump_mode -eq 1 ]; then
+    # Rshim MAC address.
     mac=$(hexdump -v -e '/1 "%02x"' ${rshim_efi_mac_sysfs})
     mac="${mac:8:2}:${mac:10:2}:${mac:12:2}:${mac:14:2}:${mac:16:2}:${mac:18:2}"
     echo "misc: NET_RSHIM_MAC=${mac}"
-  elif [ -n "${NET_RSHIM_MAC}" ]; then
-    mac="${NET_RSHIM_MAC//:/\\x}"
-    mac="\\x07\\x00\\x00\\x00\\x${mac}"
-    printf "${mac}" > ${tmp_file}
-    chattr -i ${rshim_efi_mac_sysfs}
-    cp ${tmp_file} ${rshim_efi_mac_sysfs}
-    rm -f ${tmp_file}
-    log_msg "misc: NET_RSHIM_MAC=${NET_RSHIM_MAC}"
+
+    # PXE DHCP Class Identifier.
+    value=""
+    if [ -f "${pxe_dhcp_class_id_sysfs}" ]; then
+      value=$(hexdump -C ${pxe_dhcp_class_id_sysfs} 2>/dev/null | head -1 | awk '{print $NF}')
+      value=$(echo ${value:5:-1})
+    fi
+    echo "misc: PXE_DHCP_CLASS_ID=${value}"
+  else
+    # Rshim MAC address.
+    if [ -n "${NET_RSHIM_MAC}" ]; then
+      mac="${NET_RSHIM_MAC//:/\\x}"
+      mac="\\x07\\x00\\x00\\x00\\x${mac}"
+      printf "${mac}" > ${tmp_file}
+      chattr -i ${rshim_efi_mac_sysfs}
+      cp ${tmp_file} ${rshim_efi_mac_sysfs}
+      rm -f ${tmp_file}
+      log_msg "misc: NET_RSHIM_MAC=${NET_RSHIM_MAC}"
+    fi
+
+    # PXE DHCP Class Identifier.
+    if [ -n "${PXE_DHCP_CLASS_ID}" ]; then
+      value="\\x07\\x00\\x00\\x00${PXE_DHCP_CLASS_ID}"
+      printf "${value}" > ${tmp_file}
+      if [ -f "${pxe_dhcp_class_id_sysfs}" ]; then
+        chattr -i ${pxe_dhcp_class_id_sysfs}
+      fi
+      cp ${tmp_file} ${pxe_dhcp_class_id_sysfs}
+      rm -f ${tmp_file}
+      log_msg "misc: PXE_DHCP_CLASS_ID=${PXE_DHCP_CLASS_ID}"
+    fi
   fi
 }
 
