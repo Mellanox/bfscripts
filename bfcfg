@@ -42,6 +42,7 @@ rshim_efi_mac_sysfs=${efivars}/RshimMacAddr-${efi_global_var_guid}
 pxe_dhcp_class_id_sysfs=${efivars}/DhcpClassId-${efi_global_var_guid}
 mfg_sysfs_dir=/sys/bus/platform/drivers/mlx-bootctl
 oob_mac_sysfs=${mfg_sysfs_dir}/oob_mac
+large_icm_sysfs=${mfg_sysfs_dir}/large_icm
 
 ECHO=${ECHO:-echo}
 
@@ -174,6 +175,27 @@ mfg_cfg()
   fi
 
   mfg_lock
+}
+
+icm_cfg()
+{
+  if [ $dump_mode -eq 1 ]; then
+    [ -e "${large_icm_sysfs}" ] && echo "icm: LARGE_ICM_SIZE=$(cat ${large_icm_sysfs} 2>/dev/null)"
+    return
+  fi
+
+  if [ -n "${LARGE_ICM_SIZE}" ] && [ -e "${large_icm_sysfs}" ]; then
+    log_msg "icm: LARGE_ICM_SIZE=${LARGE_ICM_SIZE}"
+    echo "${LARGE_ICM_SIZE}" > ${large_icm_sysfs} 2>>${log_file}
+    large_icm_err=$?
+
+    if [ ${large_icm_err} -eq 0 ]; then
+      log_msg "icm: large_icm written"
+    else
+      log_msg "icm: large_icm_err=${large_icm_err}"
+      return
+    fi
+  fi
 }
 
 #
@@ -748,6 +770,7 @@ log_msg
 # Mount the efi variables.
 test "$(ls -A ${efivars})" || mount -t efivarfs none ${efivars}
 
+icm_cfg
 mfg_cfg
 sys_cfg
 misc_cfg
