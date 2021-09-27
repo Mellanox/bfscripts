@@ -65,6 +65,7 @@ mfg_cfg()
   local modl_sysfs=${mfg_sysfs_dir}/modl
   local sn_sysfs=${mfg_sysfs_dir}/sn
   local uuid_sysfs=${mfg_sysfs_dir}/uuid
+  local rev_sysfs=${mfg_sysfs_dir}/rev
   local oob_efi_mac_sysfs=${efivars}/OobMacAddr-${efi_global_var_guid}
   local mac_err opn_err mac
 
@@ -75,13 +76,15 @@ mfg_cfg()
     [ -e "${modl_sysfs}" ] && echo "mfg: MFG_MODL=$(cat ${modl_sysfs} 2>/dev/null)"
     [ -e "${sn_sysfs}" ] && echo "mfg: MFG_SN=$(cat ${sn_sysfs} 2>/dev/null)"
     [ -e "${uuid_sysfs}" ] && echo "mfg: MFG_UUID=$(cat ${uuid_sysfs} 2>/dev/null)"
+    [ -e "${rev_sysfs}" ] && echo "mfg: MFG_REV=$(cat ${rev_sysfs} 2>/dev/null)"
     return
   fi
 
   if [ -z "${MFG_OOB_MAC}" ] || [ -z "${MFG_OPN}" ] || [ -z "${MFG_SKU}" ] ||
-     [ -z "${MFG_MODL}" ] || [ -z "${MFG_SN}" ] || [ -z "${MFG_UUID}" ]; then
+     [ -z "${MFG_MODL}" ] || [ -z "${MFG_SN}" ] || [ -z "${MFG_UUID}" ] ||
+     [ -z "${MFG_REV}" ] ; then
     log_msg "mfg: skip mfg since one or more of the following are unspecified:"
-    log_msg "     MFG_OOB_MAC, MFG_OPN, MFG_SKU, MFG_MODL, MFG_SN, MFG_UUID"
+    log_msg "MFG_OOB_MAC, MFG_OPN, MFG_SKU, MFG_MODL, MFG_SN, MFG_UUID, MFG_REV"
     return
   fi
 
@@ -170,6 +173,19 @@ mfg_cfg()
       log_msg "mfg: uuid written"
     else
       log_msg "mfg: uuid_err=${uuid_err}"
+      return
+    fi
+  fi
+
+  if [ -n "${MFG_REV}" ] && [ -e "${rev_sysfs}" ]; then
+    log_msg "mfg: REV=${MFG_REV}"
+    echo "${MFG_REV}" > ${rev_sysfs} 2>>${log_file}
+    rev_err=$?
+
+    if [ ${rev_err} -eq 0 ]; then
+      log_msg "mfg: rev written"
+    else
+      log_msg "mfg: rev_err=${rev_err}"
       return
     fi
   fi
