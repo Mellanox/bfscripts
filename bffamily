@@ -54,8 +54,8 @@ elif [ "$bfversion" = $BF2_PLATFORM_ID ]; then
     # map product family names to an appropriate regular expressions
     declare -A PRODUCT_FAMILY_MAP=(
         ["EVB"]="MBF2-EVB"
-        ["Camelot"]="(MBF2(H|M)5(26A|16A|25A|15A))|03GX455"
-        ["Atlantis"]="(MBF2(H|M)(322A|332A))|03GX454"
+        ["Camelot"]="(MBF2(H|M)5(26A|16A|25A|15A))|03GX455|SN37A98074"
+        ["Atlantis"]="(MBF2(H|M)(322A|332A))|03GX454|SN37A98073"
         ["Arcadia OCP 3.0"]="MBF2M(922|912)A"
         ["Asgard"]="MBF2H51(5|6)B"
         ["BlueForce"]="BLUEFORCE_IPN"
