@@ -171,7 +171,17 @@ fi
 # Run the kickstart script.
 if [ -n "$bfks" ]; then
   # shellcheck disable=SC2164
-  cd /tmp; wget "$bfks"
+  cd /tmp
+  count=0
+  # Networking is complicated and can be slow. This loop will fail fast
+  # when wget succeeds.
+  until wget "$bfks"; do
+    sleep 1
+    count=$((count+1))
+    if [ $count -eq 5 ]; then
+      break
+    fi
+  done
   bfks=$(basename "$bfks")
   if [ -f "$bfks" ]; then
     chmod +x "$bfks"
