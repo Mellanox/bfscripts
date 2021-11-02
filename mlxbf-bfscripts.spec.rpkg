@@ -62,6 +62,8 @@ install -p bfdracut          %{installdir}
 install -p man/bfdracut.8    %{man8dir}
 install -p bffamily          %{installdir}
 install -p man/bffamily.8    %{man8dir}
+install -p bfgrubcheck       %{installdir}
+install -p man/bfgrubcheck.8 %{man8dir}
 install -p bfinst            %{installdir}
 install -p man/bfinst.8      %{man8dir}
 install -p bfpxe             %{installdir}
