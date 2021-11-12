@@ -234,6 +234,10 @@ EOF
 
 if [ -n "${full_root}" ] && [ $# -eq 1 ]; then
     fspath=$1
+    if [ ! -f $fspath ]; then
+        ${ECHO} "Error - file does not exist"
+        exit 1
+    fi
 elif [ -n "${full_root}" ] && [ $# -ne 1 ]; then
     ${ECHO} "Too few arguments"
     exit 1
