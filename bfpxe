@@ -98,7 +98,11 @@ EOF
     # IP address
     if [ "$ifaddr" = "dhcp" ]; then
       ifconfig "$ifname" 0.0.0.0 up
-      udhcpc -R -b -A 5 -T 3 -t 10 -i "$ifname"
+      if [ -x /sbin/dhclient ]; then
+        /sbin/dhclient "$ifname"
+      else
+        udhcpc -R -b -A 5 -T 3 -t 10 -i "$ifname"
+      fi
       if [ -n "$TMP_MNT" ]; then
         sed -i '/Address =/d' "$TMP_MNT"/etc/systemd/network/05-"${ifname}".network
         echo "DHCP = ipv4" >> "$TMP_MNT"/etc/systemd/network/05-"${ifname}".network
