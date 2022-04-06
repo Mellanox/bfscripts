@@ -180,9 +180,9 @@ if [ -n "$bfks" ]; then
   # Networking is complicated and can be slow. This loop will fail fast
   # when wget succeeds.
   until wget "$bfks"; do
-    sleep 1
+    sleep 3
     count=$((count+1))
-    if [ $count -eq 5 ]; then
+    if [ $count -eq 20 ]; then
       break
     fi
   done
