@@ -190,5 +190,7 @@ if [ -n "$bfks" ]; then
   if [ -f "$bfks" ]; then
     chmod +x "$bfks"
     ./"$bfks"
+  else
+    echo "ERROR: Failed to download $bfks"
   fi
 fi
