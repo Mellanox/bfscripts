@@ -182,7 +182,7 @@ if [ -n "$bfks" ]; then
   until wget "$bfks"; do
     sleep 3
     count=$((count+1))
-    if [ $count -eq 20 ]; then
+    if [ $count -eq 60 ]; then
       break
     fi
   done
