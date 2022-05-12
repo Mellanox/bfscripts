@@ -62,6 +62,7 @@ image_list = (
     ("ddr-cert",  "DDR Images Content Certificate",        38),
     ("ddr_ini", "File From Which Will Load DDR (pseudo spd) Parameters", 32),
     ("snps_images", "Combined SNPS Images for all DIMM types", 33),
+    ("ddr5_snps_images", "DDR5 Combined SNPS Images for all DIMM types", 40),
     ("ddr_ate_imem", "Analog Test Engine INSTRUCTIONS", 34),
     ("ddr_ate_dmem", "Analog Test Engine DATA", 35),
     ("bl30-key-cert", "SCP Firmware BL3-0 key certificate", 8),
