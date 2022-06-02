@@ -36,6 +36,8 @@ Create or dump a BlueField boot stream.
 """
 
 import binascii
+import functools
+import operator
 import os
 from io import StringIO
 import struct
@@ -594,6 +596,65 @@ def dump_stream(infn, do_dump, do_extract, prefix):
     inf.close()
 
 
+def strip_images(infn, outfn, version):
+    imgs = []
+
+    with open(infn, 'rb') as inf:
+        while True:
+            try:
+                inimg = Image(instream=inf)
+                imgs.append(inimg)
+            except NoHdr:
+                break
+
+    # Filter out version we don't want
+    imgs = [img for img in imgs if
+            img.get_image_ver() != version]
+
+    # Construct following images bitmap, and reduce it with each output.
+    fim_map = functools.reduce(
+        operator.or_,
+        (1 << img.get_image_id() for img in imgs)
+    )
+
+    # We won't enforce order here, but we need to know when to update
+    # fim map. Do this by grouping images by id, then taking the last one
+    # for each group. This is inefficient, but considering there's a max of 64
+    # image ids, shouldn't be too bad.
+    img_id_groups = [
+        [img for img in imgs if img.get_image_id() == id]
+        for _, _, id in image_list
+    ]
+    # Get last img for each group, filtering out empty groups.
+    last_imgs = [group[-1] for group in img_id_groups if group]
+
+    # Note that the above will not work properly with a badly ordered BFB.
+    # This is on the user, we won't try to correct it.
+
+    # Don't bother enforcing any order here, strip operation
+    # *only* strips images.
+    with open(outfn, 'wb') as outf:
+        while imgs:
+            img = imgs.pop(0)
+
+            if img in last_imgs:
+                fim_map &= ~(1 << img.get_image_id())
+
+            img.set_following_images(fim_map)
+
+            # Only following images and next image ver fields
+            # need to be changed
+            if len(imgs) == 0:
+                img.set_next_image_ver(0)
+            else:
+                img.set_next_image_ver(imgs[0].get_image_ver())
+
+            img.header.major = MAJOR_VER
+            img.header.minor = MINOR_VER
+
+            img.write(outf)
+
+
 def parse_image_opt(option, opt_str, value, parser):
     """Handle one of the --<image-type> options."""
     parser.values.images.append((opt_str.lstrip("-"), value))
@@ -625,6 +686,10 @@ def main(argv):
     parser.add_option(
             "-e", "--expert", dest="e", action="store_true",
             help="expert mode: emit images in order specified on command line")
+    parser.add_option(
+            "-s", "--strip", dest="s", action="store", type="int",
+            metavar="VERSION",
+            help="strip images of the given version from the input BFB")
 
     parser.set_defaults(images=[])
 
@@ -666,12 +731,23 @@ def main(argv):
     if len(args) > 3:
         parser.error("only two input and one output file allowed")
 
-    if opt.d or opt.x:
+    if opt.d or opt.x or opt.s:
         if opt.e:
-            parser.error("-e not applicable with -d/-x")
+            parser.error("-e not applicable with -d/-x/-s")
         if opt.images:
-            parser.error("cannot specify images with -d/-x")
+            parser.error("cannot specify images with -d/-x/-s")
+
+    if opt.d or opt.x:
         dump_stream(args[0], opt.d, opt.x, opt.p)
+    elif opt.s:
+        if len(args) != 2:
+            parser.error("--strip/-s: must specify exactly one input file and "
+                         "one output file")
+
+        infn = args[0]
+        outfn = args[1]
+
+        strip_images(infn, outfn, opt.s)
     else:
         if len(args) <= 0:
             parser.error("must specify a file")

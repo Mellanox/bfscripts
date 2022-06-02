@@ -14,6 +14,12 @@ mlx-mkbfb \- Create, dump, and update BlueField BFB files
 .RB -[ x | d ]
 [options...]
 .I INFILE
+.PP
+.B mlx-mkbfb
+.B -s
+[options...]
+.I INFILE
+.I OUTFILE
 .SH DESCRIPTION
 BFB (BlueField Bootstream) files are used to boot BlueField SoCs. These files
 consist of firmware images, kernel images, kernel arguments, and sometimes
@@ -58,6 +64,9 @@ or
 Print a listing of images inside INFILE.
 .IP "-x | --extract"
 Extract all images from INFILE and write to files in the current directory.
+.IP "-s | --strip VERSION"
+Strip out all images of VERSION from INFILE, and write the result to OUTFILE.
+This will not change the order of images, only remove unwanted ones.
 .IP "-p | --prefix PREFIX"
 Prefix for files extracted by \-x, default is "dump\-".
 .IP "-v | --verbose"
