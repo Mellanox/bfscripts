@@ -14,6 +14,13 @@ mlx-mkbfb \- Create, dump, and update BlueField BFB files
 .RB -[ x | d ]
 [options...]
 .I INFILE
+.PP
+.B mlx-mkbfb
+.B -f
+.I VERSION
+[options...]
+.I INFILE
+.I OUTFILE
 .SH DESCRIPTION
 BFB (BlueField Bootstream) files are used to boot BlueField SoCs. These files
 consist of firmware images, kernel images, kernel arguments, and sometimes
@@ -22,7 +29,7 @@ pushed over the rshim device, or installed directly to one of two eMMC boot
 partitions. To install to or dump BFB files from the eMMC, use
 .BR mlxbf\-bootctl (8).
 .PP
-When not using \-x or \-d,
+When not using \-x, \-d or \-f,
 .B mlx-mkbfb
 will use each INFILE and images specified by
 .B Image Options
@@ -60,6 +67,19 @@ Print a listing of images inside INFILE.
 Extract all images from INFILE and write to files in the current directory.
 .IP "-p | --prefix PREFIX"
 Prefix for files extracted by \-x, default is "dump\-".
+.IP "-f | --filter VERSION"
+Filter away all images from INFILE that are not needed to boot VERSION.
+This will remove images with versions higher than VERSION, and also remove any
+images that are overridden with a later version. By default this is done
+carefully, so that at least one compatible image is present in OUTFILE per ID
+in INFILE.
+.IP "-s | --strip VERSION"
+Modifies -f. Instead of filtering out everything unneeded, only filter out the
+version specified by VERSION. Note that -s and -f may be different versions.
+.IP "--no-careful"
+Modifies -f. Disables "careful" image preservation, so that everything matching
+the -s/-f filter is removed. Resulting images will likely not boot on their
+own.
 .IP "-v | --verbose"
 Provide more verbose output.
 .IP "-e | --expert"

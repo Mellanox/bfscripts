@@ -36,6 +36,8 @@ Create or dump a BlueField boot stream.
 """
 
 import binascii
+import functools
+import operator
 import os
 from io import StringIO
 import struct
@@ -592,6 +594,134 @@ def dump_stream(infn, do_dump, do_extract, prefix):
     inf.close()
 
 
+# Fix the headers in a list of images so their
+# following image bitmap and next version fields are
+# correct. Does not enforce any image order.
+def fix_image_headers(imgs):
+    # Figure out the last image of a particular ID
+    # that appears in the stream. This is repesented by
+    # the version number, allowing the image to be
+    # identified by a (ID, Version) pair.
+    last_images = {}
+
+    # In addition, we construct the initial image bitmap here.
+    fi_map = 0
+
+    for img in imgs:
+        last_images[img.get_image_id()] = img.get_image_ver()
+        fi_map |= 1 << img.get_image_id()
+
+    # Convert to set so we can lookup pairs
+    last_images = set(last_images.items())
+
+    for i, img in enumerate(imgs):
+        if (img.get_image_id(), img.get_image_ver()) in last_images:
+            fi_map &= ~(1 << img.get_image_id())
+
+        img.set_following_images(fi_map)
+
+        # Only following images and next image ver fields
+        # need to be changed
+        if i == len(imgs) - 1:
+            img.set_next_image_ver(0)
+        else:
+            img.set_next_image_ver(imgs[i+1].get_image_ver())
+
+        img.header.major = MAJOR_VER
+        img.header.minor = MINOR_VER
+
+
+FILTER_KEEP = 0
+FILTER_STRIP = 1
+
+
+# Filter a bootstream based on a hardware version.
+# On FILTER_KEEP, this function will remove:
+# - Images that have a higher version than the one specified.
+# - Images that will not execute (such as BF1 images on BF2).
+#
+# On FILTER_STRIP, this function will remove:
+# - Only images that match the strip_ver.
+#
+# By default this function is "careful". It will attempt to preserve
+# at least one image for each given ID, as long as it's compatible with
+# the version we're targetting.
+def filter_bootstream(
+    infn,
+    outfn,
+    version,  # target hw version
+    filter_type,
+    strip_ver=None,
+    careful=True
+):
+    imgs = []
+
+    if filter_type == FILTER_STRIP and strip_ver is None:
+        raise Exception("internal: must specify strip_ver with FILTER_STRIP")
+
+    with open(infn, 'rb') as inf:
+        while True:
+            try:
+                inimg = Image(instream=inf)
+                imgs.append(inimg)
+            except NoHdr:
+                break
+
+    # Iterate through images and work out what to drop.
+    # This is a map, ID -> list of versions.
+    to_drop = {}
+
+    # Also keep track of the highest compatible version of image in
+    # the stream. This is used for careful mode later.
+    highest_compatible_ver = {}
+
+    for img in imgs:
+        id = img.get_image_id()
+        ver = img.get_image_ver()
+
+        if id not in to_drop:
+            to_drop[id] = []
+
+        # If this ver is "compatible", keep track.
+        if ver <= version:
+            highest_compatible_ver[id] = max(
+                highest_compatible_ver.get(id, 0),
+                ver
+            )
+
+        if filter_type == FILTER_KEEP:
+            # Drop everything but specified version
+            if ver != version:
+                to_drop[id].append(ver)
+        elif filter_type == FILTER_STRIP:
+            # Drop only the version specified
+            if ver == strip_ver:
+                to_drop[id].append(ver)
+        else:
+            raise Exception("internal: bad filter_type %d" % filter_type)
+
+    if careful:
+        # If we're being careful, don't drop the highest-versioned image
+        # that is less than or equal to the filter version. This will
+        # preserve common images, and ensure that there's a (likely)
+        # compatible image for every ID in the original stream.
+        for id, ver in highest_compatible_ver.items():
+            # Remove drop instruction for compat ver
+            to_drop[id] = [v for v in to_drop[id] if v != ver]
+
+    # Filter images.
+    imgs = [
+        img for img in imgs
+        if not img.get_image_ver() in to_drop[img.get_image_id()]
+    ]
+
+    # Fix headers and write out.
+    fix_image_headers(imgs)
+    with open(outfn, 'wb') as outf:
+        for img in imgs:
+            img.write(outf)
+
+
 def parse_image_opt(option, opt_str, value, parser):
     """Handle one of the --<image-type> options."""
     parser.values.images.append((opt_str.lstrip("-"), value))
@@ -623,6 +753,19 @@ def main(argv):
     parser.add_option(
             "-e", "--expert", dest="e", action="store_true",
             help="expert mode: emit images in order specified on command line")
+    parser.add_option(
+            "-f", "--filter", dest="f", action="store", type="int",
+            metavar="VERSION", default=None,
+            help="filter away unneeded image versions, targetting the given version")
+    parser.add_option(
+            "-s", "--strip", dest="s", action="store", type="int",
+            metavar="VERSION", default=None,
+            help="modifies -f, so it only removes a certain version rather than as much as possible")
+    parser.add_option(
+            "--no-careful", dest="no_careful", action="store_true",
+            help=("modifies -f, so it will not attempt to preserve "
+                  "at least one compatible image, instead removing as much "
+                  "as is allowed by the filter"))
 
     parser.set_defaults(images=[])
 
@@ -664,12 +807,41 @@ def main(argv):
     if len(args) > 3:
         parser.error("only two input and one output file allowed")
 
-    if opt.d or opt.x:
+    if opt.d or opt.x or opt.f:
         if opt.e:
-            parser.error("-e not applicable with -d/-x")
+            parser.error("-e not applicable with -d/-x/-s")
         if opt.images:
-            parser.error("cannot specify images with -d/-x")
+            parser.error("cannot specify images with -d/-x/-s")
+
+    if opt.d or opt.x:
         dump_stream(args[0], opt.d, opt.x, opt.p)
+    elif opt.f is not None:
+        if len(args) != 2:
+            parser.error("--filter/-f: must specify exactly one input file and "
+                         "one output file")
+
+        infn = args[0]
+        outfn = args[1]
+
+        careful = not opt.no_careful
+
+        if opt.s is not None:
+            filter_bootstream(
+                infn,
+                outfn,
+                opt.f,
+                FILTER_STRIP,
+                strip_ver=opt.s,
+                careful=careful
+            )
+        else:
+            filter_bootstream(
+                infn,
+                outfn,
+                opt.f,
+                FILTER_KEEP,
+                careful=careful
+            )
     else:
         if len(args) <= 0:
             parser.error("must specify a file")
