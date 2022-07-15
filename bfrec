@@ -154,6 +154,9 @@ uefi_capsule_update()
     # Set capsule update file variable name
     capsule_efi=MmcBootCap
     device_efi=/dev/mmcblk0p1
+    if [ -f "$capsule_file" ]; then
+        capsule_efi=$(basename $capsule_file)
+    fi
 
     # UEFI will read the capsule image from the EFI System Partition.
     # Check whether an EFI System partition is present. If not, then
