@@ -107,12 +107,12 @@ fi
 # Only allow capsule when secure boot is enabled.
 if [ -n "$bootctl_mode" ]; then
     if [ -n "$secure_boot" ]; then
-        echo "ERROR: need to use capsule in secure boot mode"
+        echo "ERROR: need to use capsule in secure boot mode" >&2
         exit 1
     fi
 
     if [ -n "$capsule_mode" ]; then
-        echo "ERROR: Use either options '--bootctl' or '--capsule'"
+        echo "ERROR: Use either options '--bootctl' or '--capsule'" >&2
         exit 1
     fi
 elif [ -z "$capsule_mode" ]; then
@@ -162,7 +162,7 @@ uefi_capsule_update()
     # Check whether an EFI System partition is present. If not, then
     # the capsule update is not supported;
     if ! fdisk -l | grep -q "EFI System" >/dev/null; then
-        echo "cannot find EFI System Partition"
+        echo "cannot find EFI System Partition" >&2
         exit 2
     fi
 
@@ -171,7 +171,7 @@ uefi_capsule_update()
     fi
 
     if [ ! -f "$capsule_file" ]; then
-        echo "Capsule file not found"
+        echo "Capsule file not found" >&2
         exit 2
     fi
 
@@ -233,12 +233,12 @@ kernel_bootctl_update()
     bfb_device=/dev/mmcblk0
 
     if ! command -v mlxbf-bootctl >/dev/null; then
-        echo "mlxbf-bootctl program is not supported"
+        echo "mlxbf-bootctl program is not supported" >&2
         exit 2
     fi
 
     if [ ! -b "$bfb_device" ]; then
-        echo "bad block device $bfb_device"
+        echo "bad block device $bfb_device" >&2
         exit 2
     fi
 
@@ -247,7 +247,7 @@ kernel_bootctl_update()
     fi
 
     if [ ! -f "$bfb_file" ]; then
-        echo "cannot find file $bfb_file"
+        echo "cannot find file $bfb_file" >&2
         exit 2
     fi
 
@@ -280,7 +280,7 @@ if [ -n "$bootctl_mode" ] || [ -n "$capsule_mode" ]; then
     capsule_file=
     if [ $# -eq 1 ]; then
         if [ ! -f "$1" ]; then
-	    echo "cannot find file $1"
+	    echo "cannot find file $1" >&2
 	    exit 1
 	fi
         bfb_file=$1
@@ -290,7 +290,7 @@ fi
 
 if [ -n "$policy" ]; then
     if [ "$policy" != "single" ] && [ "$policy" != "dual" ]; then
-        echo "ERROR: policy must be either 'single' or 'dual'"
+        echo "ERROR: policy must be either 'single' or 'dual'" >&2
         exit 1
     fi
 else # default policy
@@ -299,7 +299,7 @@ fi
 
 if [ -n "$bootctl_mode" ]; then
     if [ $# -ge 2 ]; then
-        echo "too many arguments"
+        echo "too many arguments" >&2
         exit 1
     fi
 
@@ -308,7 +308,7 @@ if [ -n "$bootctl_mode" ]; then
 
 elif [ -n "$capsule_mode" ]; then
     if [ $# -ge 2 ]; then
-        echo "too many arguments with option '--capsule'"
+        echo "too many arguments with option '--capsule'" >&2
         exit 1
     fi
 
