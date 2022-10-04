@@ -40,7 +40,11 @@ efi_global_var_guid=8be4df61-93ca-11d2-aa0d-00e098032b8c
 efi_vlan_var_guid=9e23d768-d2f3-4366-9fc3-3a7aba864374
 rshim_efi_mac_sysfs=${efivars}/RshimMacAddr-${efi_global_var_guid}
 pxe_dhcp_class_id_sysfs=${efivars}/DhcpClassId-${efi_global_var_guid}
-mfg_sysfs_dir=/sys/bus/platform/drivers/mlx-bootctl
+
+mfg_sysfs_dir=/sys/bus/platform/devices/MLNXBF04:00/driver
+if [ ! -e $mfg_sysfs_dir/oob_mac ]; then
+  mfg_sysfs_dir=/sys/bus/platform/devices/MLNXBF04:00
+fi
 oob_mac_sysfs=${mfg_sysfs_dir}/oob_mac
 large_icm_sysfs=${mfg_sysfs_dir}/large_icm
 
