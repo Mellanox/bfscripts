@@ -69,6 +69,8 @@ install -p bfrshlog          %{installdir}
 install -p man/bfrshlog.8    %{man8dir}
 install -p bfsbkeys          %{installdir}
 install -p man/bfsbkeys.8    %{man8dir}
+install -p bfsbverify        %{installdir}
+install -p man/bfsbverify.8  %{man8dir}
 install -p bfvcheck          %{installdir}
 install -p man/bfvcheck.8    %{man8dir}
 install -p bfver             %{installdir}

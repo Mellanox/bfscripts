@@ -1,0 +1,34 @@
+.TH BFSBVERIFY 8 "October 2022"
+.SH NAME
+bfsbverify \- Read BFB file from file or device and verify RoTPK and CoT.
+.SH SYNOPSIS
+.B bfsbverify
+.RB [ \-\-help ]
+.RB [ \-\-rotpk
+.RI ROTPK ]
+.RB [ \-\-version
+.RI VERSION ]
+.RB [ \-\-skip-cot ]
+.RB [ \-\-bfb
+.RI BFB ]
+.RB [ \-\-dev
+.RI DEV ]
+.SH DESCRIPTION
+Read BFB from file or from eMMC boot partition and verify the
+secure boot parameters, if present. The secure boot parameters include the
+ROTPK and the certificate chain of trust.
+Installs boot firmware FILE to the bluefield eMMC with one of two methods,
+as described in
+.SH OPTIONS
+.IP "-h|--help"
+Print help.
+.IP "-k|--rotpk ROTPK"
+Use the given ROT public key in DER format to verify the BFB.
+.IP "-v|--version VERSION"
+Verify the given version of the BFB file.
+.IP "-s|--skip-cot"
+Skip the certificate chain of trust verification.
+.IP "-b|--bfb BFB"
+Read and verify the given BFB file. Cannot be combined with '-d|--dev'.
+.IP "-d|--dev DEVICE"
+Read and verify the BFB from the given device. Cannot be combined with '-b|--bfb'.
