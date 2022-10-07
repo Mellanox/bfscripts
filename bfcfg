@@ -311,7 +311,7 @@ misc_cfg()
     # PXE DHCP Class Identifier.
     value=""
     if [ -f "${pxe_dhcp_class_id_sysfs}" ]; then
-      value=$(hexdump -C ${pxe_dhcp_class_id_sysfs} 2>/dev/null | xxd -r -p)
+      value=$(xxd -s 4 -p ${pxe_dhcp_class_id_sysfs} 2>/dev/null | xxd -r -p)
     fi
     echo "misc: PXE_DHCP_CLASS_ID=${value}"
   else
