@@ -114,7 +114,7 @@ version=1
 skip_cot_verify=
 device=
 
-PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o h \
+PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o h,k:,b:,s,v:,d: \
                 -l help,rotpk:,bfb:,skip-cot,version:,dev: -- "$@")
 eval set -- "$PARSED_OPTIONS"
 
@@ -233,12 +233,12 @@ MoaUE436XRaF9eGjTqC+0CosNAODVwdhsFwgni93iQngNGMh4Itb9sbCD48lrffC
 -----END PUBLIC KEY-----
 EOF
 
-    if [ "$(cmp $inkey $devrotpk)" ]; then
-        return 0
+    if [ "$(cmp $inkey $devrotpk)" == "" ]; then
+        touch $stamp
+        return 1
     fi
 
-    touch $stamp
-    return 1
+    return 0
 }
 
 compare_rotpk_mfg()
@@ -246,7 +246,7 @@ compare_rotpk_mfg()
     inkey=$1
     stamp=$2
 
-    mfgrotpk=${tmpdir}/devrotpk.pem
+    mfgrotpk=${tmpdir}/mfgrotpk.pem
 
     rm -f $mfgrotpk
 
@@ -268,8 +268,9 @@ hc/9orURS6yMb+wy8BPu3pcCAwEAAQ==
 -----END PUBLIC KEY-----
 EOF
     
-        if [ "$(cmp $inkey $mfgrotpk)" ]; then
-            return 0
+        if [ "$(cmp $inkey $mfgrotpk)" == "" ]; then
+            touch $stamp
+            return 1
         fi
 
     elif [ "$version" = "2" ]; then
@@ -290,8 +291,9 @@ amI+IrIuFR1UG+FQX33kfE8CAwEAAQ==
 -----END PUBLIC KEY-----
 EOF
 
-        if [ "$(cmp $inkey $mfgrotpk)" ]; then
-            return 0
+        if [ "$(cmp $inkey $mfgrotpk)" = "" ]; then
+            touch $stamp
+            return 1
         fi
 
         # Otherwise try second key.
@@ -312,8 +314,9 @@ o3SbK3TT1/4WOQ6YW/i36JaIFUyGZYYe2v0JYtxJoScxGv3Oj5kNK6J5Nun10Lkq
 -----END PUBLIC KEY-----
 EOF
 
-        if [ "$(cmp $inkey $mfgrotpk)" ]; then
-            return 0
+        if [ "$(cmp $inkey $mfgrotpk)" = "" ]; then
+            touch $stamp
+            return 1
         fi
 
         # Otherwise try third key.
@@ -334,8 +337,9 @@ uhHZD+izSMuQe3JqTkkLoxcCAwEAAQ==
 -----END PUBLIC KEY-----
 EOF
 
-        if [ "$(cmp $inkey $mfgrotpk)" ]; then
-            return 0
+        if [ "$(cmp $inkey $mfgrotpk)" = "" ]; then
+            touch $stamp
+            return 1
         fi
 
         # Otherwise try fourth key.
@@ -356,14 +360,14 @@ oWOXTHe1tWmSg6xE9jkwD4ECAwEAAQ==
 -----END PUBLIC KEY-----
 EOF
 
-        if [ "$(cmp $inkey $mfgrotpk)" ]; then
-            return 0
+        if [ "$(cmp $inkey $mfgrotpk)" = "" ]; then
+            touch $stamp
+            return 1
         fi
 
     fi
 
-    touch $stamp
-    return 1
+    return 0
 }
 
 verify_rotpk()
