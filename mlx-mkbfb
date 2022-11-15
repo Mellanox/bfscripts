@@ -82,6 +82,7 @@ image_list = (
     ("bl33-key-cert", "Non-Trusted Firmware BL3-3 key certificate", 11),
     ("bl33-cert", "Non-Trusted Firmware BL3-3 content certificate", 15),
     ("bl33", "Non-Trusted Firmware BL3-3 bin", 5),
+    ("dummy", "Dummy data for padding", 41),
 
     # Images for UEFI
     ("capsule", "UEFI capsule image", 52),
