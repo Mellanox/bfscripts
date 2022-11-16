@@ -82,7 +82,6 @@ image_list = (
     ("bl33-key-cert", "Non-Trusted Firmware BL3-3 key certificate", 11),
     ("bl33-cert", "Non-Trusted Firmware BL3-3 content certificate", 15),
     ("bl33", "Non-Trusted Firmware BL3-3 bin", 5),
-    ("dummy", "Dummy data for padding", 41),
 
     # Images for UEFI
     ("capsule", "UEFI capsule image", 52),
@@ -93,6 +92,7 @@ image_list = (
     ("boot-args", "Arguments for boot image", 59),
     ("boot-timeout", "Boot menu timeout", 60),
     ("uefi-tests", "Specify what UEFI tests to run", 61),
+    ("dummy", "Dummy data for padding", 41),
     ("ramdisk", "RAM Disk image", 54),
     ("image", "Boot image", 62),
     ("initramfs", "In-memory filesystem", 63),
