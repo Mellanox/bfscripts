@@ -33,6 +33,7 @@
 
 BF1_PLATFORM_ID=0x00000211
 BF2_PLATFORM_ID=0x00000214
+BF3_PLATFORM_ID=0x0000021c
 
 bfversion=$(bfhcafw mcra 0xf0014.0:16)
 
@@ -59,6 +60,16 @@ elif [ "$bfversion" = $BF2_PLATFORM_ID ]; then
 	freq=$(echo "$F $padfreq * 16384 / $R 1 + / $OD 1 + / p"  | dc)
 
 	echo "core freq = ${freq}MHz"
+
+elif [ "$bfversion" = $BF3_PLATFORM_ID ]; then
+
+	C=$(($(bfhcafw mcra 0x34002b4.0:32)))
+	D=$(($(bfhcafw mcra 0x34002b8.0:32)))
+
+	freq=$(echo "scale=4; $C * $padfreq / $D" | bc)
+
+	echo "core freq = ${freq}MHz"
+
 else
 	echo "Unknown platform, unable to get the cpu frequency"
 fi
