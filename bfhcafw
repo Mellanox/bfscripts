@@ -63,24 +63,22 @@ err () {
 
 BASE_FW_NAME=mlxfwmanager_sriov_dis_aarch64
 
-CHIPNUM_BF1=41682
-CHIPNUM_BF2=41686
-
 get_chipnum () {
     if ! [ -e /sys/firmware/acpi/tables ]; then
         err "fatal: cannot find acpi tables"
         exit 1
     fi
 
-    # Only two HW revs right now
-    # Figure out which rev by searching for an ACPI table that's only present
-    # on BF2
-    if hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF22; then
-        # BF2
-        chipnum=41686
-    else
+    # Figure out which rev by searching for an ACPI table specific to the BF version
+    if hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF02; then
         # BF1
         chipnum=41682
+    elif hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF22; then
+        # BF2
+        chipnum=41686
+    elif hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF33; then
+        # BF3
+        chipnum=fw-41692
     fi
 
     echo $chipnum
