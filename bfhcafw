@@ -63,9 +63,9 @@ err () {
     echo "bfhcafw: $@" >&2
 }
 
-info () {
+debug () {
     if [ -n "$VERBOSE" ]; then
-        echo "bfhcafw: info: $@" >&2
+        echo "bfhcafw: debug: $@" >&2
     fi
 }
 
@@ -107,12 +107,12 @@ find_fw_with_name () {
 
     # Ubuntu location
     mlxfw="/opt/mellanox/mlnx-fw-updater/firmware/$1"
-    info "searching $mlxfw"
+    debug "searching $mlxfw"
     if [ -f $mlxfw ]; then echo $mlxfw; return 0; fi
 
     # Yocto location
     mlxfw="/lib/firmware/mellanox/$1"
-    info "searching $mlxfw"
+    debug "searching $mlxfw"
     if [ -f $mlxfw ]; then echo $mlxfw; return 0; fi
 
     return 1
