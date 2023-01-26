@@ -119,14 +119,6 @@ EOF
 compare_versions "$BUILD_ATF" "$RUNTIME_ATF" "ATF"
 compare_versions "$BUILD_UEFI" "$RUNTIME_UEFI" "UEFI"
 
-if [ "$FW_UPDATED" = "yes" ]; then
-    cat << EOF
-WARNING: The firmware has been updated, but the chassis must be
-power cycled for changes to take effect.
-
-EOF
-fi
-
 if [ "$BUILD_FW" = "N/A" ]; then
     cat << EOF
 WARNING: The bundled firmware manager ($mlxfw)
@@ -137,6 +129,14 @@ EOF
     version_error=ERR
 else
     compare_versions "$BUILD_FW" "$RUNTIME_FW" "FW"
+fi
+
+if [ "$FW_UPDATED" = "yes" ]; then
+    cat << EOF
+WARNING: The firmware has been updated, but the chassis must be
+power cycled for changes to take effect.
+
+EOF
 fi
 
 echo "Version check complete."
