@@ -120,10 +120,13 @@ compare_versions "$BUILD_ATF" "$RUNTIME_ATF" "ATF"
 compare_versions "$BUILD_UEFI" "$RUNTIME_UEFI" "UEFI"
 
 if [ "$BUILD_FW" = "N/A" ]; then
+    BOARD_PN="$(lspci -s $(bfhcafw bus) -vv | grep '\[PN\]' | cut -d' ' -f4-)"
     cat << EOF
-WARNING: The bundled firmware manager ($mlxfw)
-does not recognize the current card. No recommended firmware can
-be determined.
+WARNING: The bundled firmware manager does not include firmware for
+this board. Recommended firmware version cannot be determined.
+
+Firmware Manager Path: $mlxfw
+Part Number: $BOARD_PN
 
 EOF
     version_error=ERR
