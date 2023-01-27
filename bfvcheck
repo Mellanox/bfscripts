@@ -27,19 +27,25 @@
 # of the authors and should not be interpreted as representing official policies,
 # either expressed or implied, of the FreeBSD Project.
 
+PROGNAME=bfvcheck
+
+err () {
+    echo "$PROGNAME: $@" >&2
+}
+
 echo "Beginning version check..."
 
 # bfb file used to extract ATF/UEFI's expected version information
 BOOTIMG_LOCATION=/lib/firmware/mellanox/boot/default.bfb
 
-mlxfw=$(bfhcafw find)
+bfhcafw_status=0
+mlxfw=$(bfhcafw find) || bfhcafw_status=$?
 
-if [ "$?" -ne 0 ]; then
+if [ "$bfhcafw_status" -ne 0 ]; then
     # FW package not found anywhere, so error out fw check
     # We keep going to check bootloader versions anyway.
-    echo "The firmware package could not be located."
-    echo "Firmware check will fail."
-    echo ""
+    err "The firmware package could not be located."
+    err "Firmware check will fail."
     mlxfw=false
 fi
 
@@ -87,11 +93,12 @@ if [ $MLXFW_SUCCESS -eq 0 ]; then
         FW_UPDATED=yes
     fi
 else
-    echo "There was an error detecting the firmware version."
-    echo ""
+    err "There was an error detecting the firmware version."
     BUILD_FW=ERROR
     RUNTIME_FW=
 fi
+
+echo ""
 
 cat << EOF
 -RECOMMENDED VERSIONS-
@@ -111,7 +118,21 @@ EOF
 
 compare_versions "$BUILD_ATF" "$RUNTIME_ATF" "ATF"
 compare_versions "$BUILD_UEFI" "$RUNTIME_UEFI" "UEFI"
-compare_versions "$BUILD_FW" "$RUNTIME_FW" "FW"
+
+if [ "$BUILD_FW" = "N/A" ]; then
+    BOARD_PN="$(lspci -s $(bfhcafw bus) -vv | grep '\[PN\]' | cut -d' ' -f4-)"
+    cat << EOF
+WARNING: The bundled firmware manager does not include firmware for
+this board. Recommended firmware version cannot be determined.
+
+Firmware Manager Path: $mlxfw
+Part Number: $BOARD_PN
+
+EOF
+    version_error=ERR
+else
+    compare_versions "$BUILD_FW" "$RUNTIME_FW" "FW"
+fi
 
 if [ "$FW_UPDATED" = "yes" ]; then
     cat << EOF
