@@ -6,6 +6,8 @@ bfver \- Print bluefield software version information
 .RB [ \-\-help | \-h ]
 .RB [ \-\-part | \-p
 .IR PARTITIONS ]
+.RB [ \-\-file | \-f
+.IR FILE ]
 .SH DESCRIPTION
 Print the version of the ATF and UEFI firmware currently installed to
 the chip's eMMC, as well as the installed version of the Yocto filesystem, if
@@ -17,3 +19,5 @@ Print version information for all boot partitions specified in a
 comma-delimited list. For example, "-p0,1" will print bootloader versions for
 partition 0, and then partition 1. "-p1" will print only partition 1. If -p
 is not specified, then current primary partition will be printed.
+.IP "--file | -f PARTITIONS"
+Print BSP version information from a BFB file instead of what is installed.
