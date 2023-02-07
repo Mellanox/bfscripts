@@ -32,6 +32,9 @@ TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 trap "rm -rf $TMP_DIR; exit 1" TERM INT
 
+# Build number to use in case it can't be retrieved from BFB.
+DEFAULT_BUILD_ID=999
+
 usage ()
 {
     cat <<EOF
@@ -117,8 +120,8 @@ print_bfb_file_vers () {
     BUILD_ID="$(strings -el "$BFB_PATH" | grep "BId" | sed "s/^BId//")"
 
     if [ -z "$BUILD_ID" ]; then
-        echo "$PROGNAME: warn: could not find UEFI build ID (likely bootloader too old)" >&2
-        BUILD_ID="NO_BUILD_ID"
+        echo "$PROGNAME: warn: could not find UEFI build ID (likely bootloader too old, using placeholder value)" >&2
+        BUILD_ID="$DEFAULT_BUILD_ID"
     fi
 
     if [ "$BUILD_ID" = 0 ]; then
