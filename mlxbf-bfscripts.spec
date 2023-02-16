@@ -67,6 +67,8 @@ install -p bfrec             %{installdir}
 install -p man/bfrec.8       %{man8dir}
 install -p bfrshlog          %{installdir}
 install -p man/bfrshlog.8    %{man8dir}
+install -p bfsbdump          %{installdir}
+install -p man/bfsbdump.8    %{man8dir}
 install -p bfsbkeys          %{installdir}
 install -p man/bfsbkeys.8    %{man8dir}
 install -p bfsbverify        %{installdir}
