@@ -18,6 +18,7 @@ Overview of each file:
 - **bfpxe** PXE boot helper script.
 - **bfrec** Force update of the bootloader only.
 - **bfrshlog** Write message into the rshim logging buffer.
+- **bfsbdump** Dump secure boot status information.
 - **bfsbkeys** Dump all public keys in ATF.
 - **bfsbverify** Read BFB file from file or device and verify RoTPK and CoT.
 - **bfver** Print ATF, UEFI and rootfs versions.
