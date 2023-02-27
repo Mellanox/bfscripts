@@ -228,6 +228,42 @@ EOF
     return 0
 }
 
+verify_bfb_signature()
+{
+    in_bfb=$1
+    in_ver=$2
+
+    if [ ! "$(which openssl)" ]; then
+        echo "cannot find \"openssl\" command!"
+        echo "skip BFB signature verification"
+        return 0
+    fi
+
+    # Read Arm lifecycle, BFB is validated in lifecycle state secure only.
+    lc=$(mlxbf-bootctl | grep lifecycle | cut -f2 -d':' | tr -d ' ')
+    if [ "$lc" = "Secured(development)" ] || [ "$lc" = "GASecured" ]; then
+        # Determine the secure boot key type.
+        if [ "$lc" = "Secured(development)" ]; then
+            sbkey="development"
+        elif [ "$lc" = "GASecured" ]; then
+            sbkey="production"
+        fi
+
+        # BFB file verification.
+        output=$(bfsbverify --bfb $in_bfb --version $in_ver)
+        if [ "$(echo $output | grep 'Unsigned BFB file')" ]; then
+            echo "unsigned BFB file!"
+            exit 2
+        elif [ ! "$(echo $output | grep $sbkey)" ]; then
+            echo "bad BFB file signature!"
+            exit 2
+        fi
+    else
+        echo "Arm life cycle state \"$lc\""
+        echo "skip BFB signature verification"
+    fi
+}
+
 kernel_bootctl_update()
 {
     bfb_device=/dev/mmcblk0
@@ -249,6 +285,24 @@ kernel_bootctl_update()
     if [ ! -f "$bfb_file" ]; then
         echo "cannot find file $bfb_file" >&2
         exit 2
+    fi
+
+    # Figure out te platform by searching for an ACPI table
+    # specific to the BF version (ACPI trick to learn about
+    # the platform version) and verify BFB signature,
+    # if needed. BFB sinature verification is ignored in
+    # BlueField-1 devices.
+    if [ -e /sys/firmware/acpi/tables ]; then
+        if hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF22; then
+            # Verify BFB for BlueField-2 device.
+            verify_bfb_signature $bfb_file 1
+        elif hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF33; then
+            # Verify BFB for BlueField-3 device.
+            verify_bfb_signature $bfb_file 2
+        fi
+    else
+        echo "cannot find acpi tables!"
+        echo "skip BFB signature verification"
     fi
 
     $run /sbin/mlxbf-bootctl -s -d $bfb_device -b $bfb_file
