@@ -233,7 +233,7 @@ MoaUE436XRaF9eGjTqC+0CosNAODVwdhsFwgni93iQngNGMh4Itb9sbCD48lrffC
 -----END PUBLIC KEY-----
 EOF
 
-    if [ "$(cmp $inkey $devrotpk)" == "" ]; then
+    if [ "$(cmp $inkey $devrotpk)" = "" ]; then
         touch $stamp
         return 1
     fi
@@ -268,7 +268,7 @@ hc/9orURS6yMb+wy8BPu3pcCAwEAAQ==
 -----END PUBLIC KEY-----
 EOF
     
-        if [ "$(cmp $inkey $mfgrotpk)" == "" ]; then
+        if [ "$(cmp $inkey $mfgrotpk)" = "" ]; then
             touch $stamp
             return 1
         fi

@@ -1,4 +1,4 @@
-#!/bin/sh -e
+#!/bin/sh
 
 # Copyright (c) 2020, Mellanox Technologies
 # All rights reserved.
@@ -54,11 +54,19 @@ mcra    Similar to flint, automatically selects binary and PCI conf path to
         run mcra.
 
 bus     Prints the PCI bus number for the ConnectX interface.
+
+Set the environment variable VERBOSE=1 to see more detailed output.
 EOF
 }
 
 err () {
     echo "bfhcafw: $@" >&2
+}
+
+debug () {
+    if [ -n "$VERBOSE" ]; then
+        echo "bfhcafw: debug: $@" >&2
+    fi
 }
 
 BASE_FW_NAME=mlxfwmanager_sriov_dis_aarch64
@@ -84,11 +92,13 @@ get_chipnum () {
     echo $chipnum
 }
 
-# Get the mlxfw filename based on current system and a specified base name.
+# Get the mlxfw filename based on current system and a specified base name
+# and separator.
 get_mlxfw_name () {
     # $1 - Base filename
+    # $2 - Separator
 
-    echo "$1-$(get_chipnum)"
+    echo "$1$2$(get_chipnum)"
 }
 
 # Search for FW file of a given filename in known locations
@@ -97,10 +107,12 @@ find_fw_with_name () {
 
     # Ubuntu location
     mlxfw="/opt/mellanox/mlnx-fw-updater/firmware/$1"
+    debug "searching $mlxfw"
     if [ -f $mlxfw ]; then echo $mlxfw; return 0; fi
 
     # Yocto location
     mlxfw="/lib/firmware/mellanox/$1"
+    debug "searching $mlxfw"
     if [ -f $mlxfw ]; then echo $mlxfw; return 0; fi
 
     return 1
@@ -111,8 +123,15 @@ find_fw_with_name () {
 find_fw_with_basename () {
     # $1 - FW Base name
 
-    echo $(find_fw_with_name $(get_mlxfw_name "$1"))
-    return $?
+    result=$(find_fw_with_name $(get_mlxfw_name "$1" -))
+    if [ $? -eq 0 ]; then echo $result; return 0; fi
+
+    # Need to try with _ as separator too, some older distributions use
+    # _ instead of -
+    result=$(find_fw_with_name $(get_mlxfw_name "$1" _))
+    if [ $? -eq 0 ]; then echo $result; return 0; fi
+
+    return 1
 }
 
 find_fw () {
