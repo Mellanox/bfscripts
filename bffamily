@@ -79,6 +79,7 @@ elif [ "$bfversion" = $BF3_PLATFORM_ID ]; then
         ["EVB"]="MBF3-(DDR4-EVB|EVB-SKT|EVB)"
 	["Moonraker"]="900-9D3B(4|6|8)-00(EN|PN|CC|CV|SC|SV|CN)-(EA|AA|DA|AB|FB)(0|A|B)"
 	["Goldeneye"]="900-9D3D4-00(EN|NN)-(GA|HA)(0|A|B)"
+	["Roy"]="699-21014-0230"
     )
     PART_NUMBER=$(mlxvpd -d /dev/mst/mt41692_pciconf0 | grep "Part Number" | awk '{print $NF}')
 
