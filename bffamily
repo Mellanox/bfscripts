@@ -81,7 +81,7 @@ elif [ "$bfversion" = $BF3_PLATFORM_ID ]; then
 	["Goldeneye"]="900-9D3D4-00(EN|NN)-(GA|HA)(0|A|B)"
 	["Roy"]="699-21014-0230"
     )
-    PART_NUMBER=$(mlxvpd -d /dev/mst/mt41692_pciconf0 | grep "Part Number" | awk '{print $NF}')
+    PART_NUMBER=$(lspci -s "$(bfhcafw bus)" -vv | grep PN)
 
 else
     echo "Unknown platform"
