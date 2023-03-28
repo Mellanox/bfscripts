@@ -25,3 +25,4 @@ Overview of each file:
 - **bfvcheck** Check whether software versions installed match those in current release.
 - **bfvcheck.service** Companion service to bfvcheck, runs bfvcheck at boot time.
 - **mlx-mkbfb** Builds and extracts BFB files.
+- **bfup** Informs that linux is running via rshlog message and gpio pin
