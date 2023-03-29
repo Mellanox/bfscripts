@@ -83,6 +83,8 @@ install -p bfgrubcheck       %{installdir}
 install -p man/bfgrubcheck.8 %{man8dir}
 install -p bfhcafw           %{installdir}
 install -p man/bfhcafw.8     %{man8dir}
+install -p bfup              %{installdir}
+install -p man/bfup.8        %{man8dir}
 
 install -p mlx-mkbfb       %{installdir}
 install -p man/mlx-mkbfb.1 %{man1dir}
