@@ -26,3 +26,4 @@ Overview of each file:
 - **bfvcheck.service** Companion service to bfvcheck, runs bfvcheck at boot time.
 - **mlx-mkbfb** Builds and extracts BFB files.
 - **bfup** Informs that linux is running via rshlog message and gpio pin
+- **bfup.services** Companion service to bfup, runs bfup at boot time.
