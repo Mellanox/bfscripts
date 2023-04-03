@@ -175,6 +175,8 @@ uefi_capsule_update()
         exit 2
     fi
 
+    has_debug_bfb $capsule_file
+
     # Check whether the EFI System Partition is mounted. If not mounted,
     # then create the mountpoint and mount the disk partition to the
     # default location in order to copy the update files.
@@ -287,6 +289,8 @@ kernel_bootctl_update()
         exit 2
     fi
 
+    has_debug_bfb $bfb_file
+
     # Figure out te platform by searching for an ACPI table
     # specific to the BF version (ACPI trick to learn about
     # the platform version) and verify BFB signature,
@@ -323,6 +327,52 @@ kernel_bootctl_update()
 EOF
 
     return 0
+}
+
+has_debug_bfb()
+{
+    # A debug image consists of a regular BFB file which
+    # includes an authorization certificate (a.k.a. AuthCert).
+    # The debug image is expected to be installed in Secure
+    # LifeCycle state.
+    #
+    # Implement a dumb check to verify whether the
+    # authorization certificate is present within the
+    # BFB. It is a basic indication that the BFB is
+    # intended for debug.
+
+    in_file=$1
+
+    # Read Arm lifecycle, debug image is ignored in lifecycle state non-secure.
+    lc=$(mlxbf-bootctl | grep lifecycle | cut -f2 -d':' | tr -d ' ')
+    if [ "$lc" != "Secured(development)" ] && [ "$lc" != "GASecured" ]; then
+        return 0
+    fi
+
+    authcert_cn="Trusted Debug BF Root Authorization Certificate"
+    # Add dummy 'tr' command, because 'grep' might fail and cause the script
+    # to exit as '-e' is set. 
+    authcert="$(strings "$in_file" | grep -m 1 "$authcert_cn" | tr -d ' ')"
+    if [ -z "$authcert" ]; then
+        return 0
+    fi
+
+    # If we reach here, it means that a debug image is
+    # going to be installed, thus request user confirmation.
+    cat <<EOF
+
+    ***********************************************************************
+    ***                                                                 ***
+    ***   You are about to install a debug image on Secured platform.   ***
+    ***                                                                 ***
+    ***********************************************************************
+EOF
+    read -p "Continue (Y|n)[n]: " -n 1 -r
+    echo # (optional) move to a new line
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Aborted!"
+        exit 0
+    fi
 }
 
 #
