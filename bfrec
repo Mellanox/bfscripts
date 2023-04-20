@@ -148,12 +148,8 @@ capsule_location=/lib/firmware/mellanox/boot/capsule
 
 uefi_capsule_update()
 {
-    # Set EFI System partition mountpoint
-    mount_efi=/mnt/efi_system_partition
-
     # Set capsule update file variable name
     capsule_efi=MmcBootCap
-    device_efi=/dev/mmcblk0p1
     if [ -f "$capsule_file" ]; then
         capsule_efi=$(basename $capsule_file)
     fi
@@ -177,42 +173,56 @@ uefi_capsule_update()
 
     has_debug_bfb $capsule_file
 
-    # Check whether the EFI System Partition is mounted. If not mounted,
-    # then create the mountpoint and mount the disk partition to the
-    # default location in order to copy the update files.
-    esp_dir=$(mount | grep $device_efi | cut -f 3 -d' ')
-    if [ -z "$esp_dir" ]; then
-        if [ ! -d $mount_efi ]; then
-            $run mkdir $mount_efi
-        fi
-        $run mount $device_efi $mount_efi
-    else
-        mount_efi=$esp_dir
-    fi
+    # It is possible that multiple EFI System partitions are present;
+    # for example, an eMMC partition and/or an NVMe partition.
+    # Thus, check whether a given EFI System Partition is mounted.
+    # If not mounted, then create the mountpoint and mount the disk
+    # partition to the default location in order to copy the update
+    # files. It is harmless to copy the files to multiple EFI System
+    # partitions.
+    device_efi=$(fdisk -l | grep -i EFI | cut -d' ' -f1 | tr '\n' ' ')
+    for curr_device_efi in $device_efi
+    do
+        # Set EFI System partition mountpoint
+        mount_efi=/mnt/efi_system_partition
 
-    # Copy the capsule file into the EFI System Partition.
-    # "EFI/UpdateCapsule" is the standard directory defined by UEFI spec.
-    # Files in this directory will processed as capsules in alphabetical
-    # order once the capsule flag is set in the 'OsIndications' variable
-    # which is done by the printf command below.
-    $run mkdir -p "$mount_efi/EFI/UpdateCapsule" 2>/dev/null
-    $run cp $capsule_file "$mount_efi/EFI/UpdateCapsule/${capsule_efi}1"
-    if [ "$policy" = "dual" ]; then
-        $run cp $capsule_file "$mount_efi/EFI/UpdateCapsule/${capsule_efi}2"
-    fi
+        esp_dir=$(mount | grep $curr_device_efi | cut -f 3 -d' ')
+        if [ -z "$esp_dir" ]; then
+            if [ ! -d $mount_efi ]; then
+                $run mkdir $mount_efi
+            fi
+            echo "mount $curr_device_efi at $mount_efi"
+            $run mount $curr_device_efi $mount_efi
+        else
+            mount_efi=$esp_dir
+        fi
+
+        # Copy the capsule file into the EFI System Partition.
+        # "EFI/UpdateCapsule" is the standard directory defined by UEFI spec.
+        # Files in this directory will processed as capsules in alphabetical
+        # order once the capsule flag is set in the 'OsIndications' variable
+        # which is done by the printf command below.
+        $run mkdir -p "$mount_efi/EFI/UpdateCapsule" 2>/dev/null
+        $run cp $capsule_file "$mount_efi/EFI/UpdateCapsule/${capsule_efi}1"
+        if [ "$policy" = "dual" ]; then
+            $run cp $capsule_file "$mount_efi/EFI/UpdateCapsule/${capsule_efi}2"
+        fi
+        $run sync
+
+        # Doing some cleanup, if needed
+        if [ -z "$esp_dir"  ]; then
+            echo "umount $curr_device_efi"
+            $run umount "$mount_efi"
+            $run rmdir "$mount_efi"
+            $run sync
+            # Wait until eMMC internal cache is fully flushed
+            $run sleep 3
+        fi
+    done
 
     $run printf "\x07\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00" > \
         "${efivars}/${os_var}"
     $run sync
-
-    # Doing some cleanup, if needed
-    if [ -z "$esp_dir"  ]; then
-        $run umount "$mount_efi"
-        $run rmdir "$mount_efi"
-        $run sync
-        # Wait until eMMC internal cache is fully flushed
-        $run sleep 3
-    fi
 
     cat <<EOF
 
