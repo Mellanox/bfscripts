@@ -245,8 +245,14 @@ verify_bfb_signature()
     in_bfb=$1
     in_ver=$2
 
-    if [ ! "$(which openssl)" ]; then
+    if [ ! "$(which openssl 2>/dev/null)" ]; then
         echo "cannot find \"openssl\" command!"
+        echo "skip BFB signature verification"
+        return 0
+    fi
+
+    if [ ! "$(which python3 2>/dev/null)" ]; then
+        echo "cannot find \"python3\" command!"
         echo "skip BFB signature verification"
         return 0
     fi
