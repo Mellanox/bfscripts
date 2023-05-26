@@ -37,6 +37,7 @@ dump_mode=0
 
 efivars=/sys/firmware/efi/efivars
 efi_global_var_guid=8be4df61-93ca-11d2-aa0d-00e098032b8c
+efi_bfcfg_var_guid=487ff588-fb71-4b19-9100-ebe067aa1af0
 efi_vlan_var_guid=9e23d768-d2f3-4366-9fc3-3a7aba864374
 rshim_efi_mac_sysfs=${efivars}/RshimMacAddr-${efi_global_var_guid}
 pxe_dhcp_class_id_sysfs=${efivars}/DhcpClassId-${efi_global_var_guid}
@@ -195,6 +196,220 @@ mfg_cfg()
   fi
 
   mfg_lock
+}
+
+add_trailing_null()
+{
+  for ((i = 0; i<${1}; i++))
+  do
+    printf '\0' >> ${2} 2>>${log_file}
+  done
+}
+
+mfg_ext_cfg()
+{
+  local tmp_file=/tmp/.bfcfg-data
+  local MKCAP=/usr/lib/firmware/mellanox/boot/capsule/scripts/mlx-mkcap
+  local MFGEXT_CAPSULE=/tmp/BfCfgCapsule
+  local BFREC=bfrec
+  local MFG_LEN=256
+  local sys_mfr_sysfs=${efivars}/BfCfgSysMfr-${efi_bfcfg_var_guid}
+  local sys_pdn_sysfs=${efivars}/BfCfgSysPdn-${efi_bfcfg_var_guid}
+  local sys_ver_sysfs=${efivars}/BfCfgSysVer-${efi_bfcfg_var_guid}
+  local bsb_mfr_sysfs=${efivars}/BfCfgBsbMfr-${efi_bfcfg_var_guid}
+  local bsb_pdn_sysfs=${efivars}/BfCfgBsbPdn-${efi_bfcfg_var_guid}
+  local bsb_ver_sysfs=${efivars}/BfCfgBsbVer-${efi_bfcfg_var_guid}
+  local bsb_sn_sysfs=${efivars}/BfCfgBsbSn-${efi_bfcfg_var_guid}
+  local sys_mfr_max_len=24
+  local sys_pdn_max_len=24
+  local sys_ver_max_len=512
+  local bsb_mfr_max_len=24
+  local bsb_pdn_max_len=24
+  local bsb_ver_max_len=24
+  local bsb_sn_max_len=24
+  local pad_len=0
+
+  if [ $dump_mode -eq 1 ]; then
+    [ -e "${sys_mfr_sysfs}" ] && echo "mfg: MFG_SYS_MFR=$(tr -d '\0' < ${sys_mfr_sysfs} 2>/dev/null)"
+    [ -e "${sys_pdn_sysfs}" ] && echo "mfg: MFG_SYS_PDN=$(tr -d '\0' < ${sys_pdn_sysfs} 2>/dev/null)"
+    [ -e "${sys_ver_sysfs}" ] && echo "mfg: MFG_SYS_VER=$(tr -d '\0' < ${sys_ver_sysfs} 2>/dev/null)"
+    [ -e "${bsb_mfr_sysfs}" ] && echo "mfg: MFG_BSB_MFR=$(tr -d '\0' < ${bsb_mfr_sysfs} 2>/dev/null)"
+    [ -e "${bsb_pdn_sysfs}" ] && echo "mfg: MFG_BSB_PDN=$(tr -d '\0' < ${bsb_pdn_sysfs} 2>/dev/null)"
+    [ -e "${bsb_ver_sysfs}" ] && echo "mfg: MFG_BSB_VER=$(tr -d '\0' < ${bsb_ver_sysfs} 2>/dev/null)"
+    [ -e "${bsb_sn_sysfs}" ] && echo "mfg: MFG_BSB_SN=$(tr -d '\0' < ${bsb_sn_sysfs} 2>/dev/null)"
+    return
+  fi
+
+  if [ -z "${MFG_SYS_MFR}" ] && [ -z "${MFG_SYS_PDN}" ] && [ -z "${MFG_SYS_VER}" ] &&
+     [ -z "${MFG_BSB_MFR}" ] && [ -z "${MFG_BSB_PDN}" ] && [ -z "${MFG_BSB_VER}" ] &&
+     [ -z "${MFG_BSB_SN}" ] ; then
+    log_msg "mfg: skip mfg extension since none of the following are specified:"
+    log_msg "MFG_SYS_MFR, MFG_SYS_PDN, MFG_SYS_VER, MFG_BSB_MFR, MFG_BSB_PDN, MFG_BSB_VER, MFG_BSB_SN"
+    return
+  fi
+
+  if [ -e ${tmp_file} ]; then
+    rm -rf ${tmp_file}
+  fi
+
+  if [ -e ${MFGEXT_CAPSULE} ]; then
+    rm -rf ${MFGEXT_CAPSULE}
+  fi
+
+  # Reserve MFG space for future use.
+  add_trailing_null ${MFG_LEN} ${tmp_file}
+
+  if [ -n "${MFG_SYS_MFR}" ]; then
+    log_msg "mfg: SYS_MFR=${MFG_SYS_MFR}"
+
+    if [ ${#MFG_SYS_MFR} -gt ${sys_mfr_max_len} ]; then
+      log_msg "mfg: SYS_MFR exceeding max length ${sys_mfr_max_len}"
+      return
+    fi
+
+    printf "${MFG_SYS_MFR}" >> ${tmp_file} 2>>${log_file}
+    sys_mfr_err=$?
+
+    if [ ${sys_mfr_err} -eq 0 ]; then
+      log_msg "mfg: sys_mfr written"
+    else
+      log_msg "mfg: sys_mfr_err=${sys_mfr_err}"
+      return
+    fi
+  fi
+  pad_len=$((${sys_mfr_max_len}-${#MFG_SYS_MFR}))
+  add_trailing_null ${pad_len} ${tmp_file}
+
+  if [ -n "${MFG_SYS_PDN}" ]; then
+    log_msg "mfg: SYS_PDN=${MFG_SYS_PDN}"
+
+    if [ ${#MFG_SYS_PDN} -gt ${sys_pdn_max_len} ]; then
+      log_msg "mfg: SYS_PDN exceeding max length ${sys_pdn_max_len}"
+      return
+    fi
+
+    printf "${MFG_SYS_PDN}" >> ${tmp_file} 2>>${log_file}
+    sys_pdn_err=$?
+
+    if [ ${sys_pdn_err} -eq 0 ]; then
+      log_msg "mfg: sys_pdn written"
+    else
+      log_msg "mfg: sys_pdn_err=${sys_pdn_err}"
+      return
+    fi
+  fi
+  pad_len=$((${sys_pdn_max_len}-${#MFG_SYS_PDN}))
+  add_trailing_null ${pad_len} ${tmp_file}
+
+  if [ -n "${MFG_SYS_VER}" ]; then
+    log_msg "mfg: SYS_VER=${MFG_SYS_VER}"
+
+    if [ ${#MFG_SYS_VER} -gt ${sys_ver_max_len} ]; then
+      log_msg "mfg: SYS_VER exceeding max length ${sys_ver_max_len}"
+      return
+    fi
+
+    printf "${MFG_SYS_VER}" >> ${tmp_file} 2>>${log_file}
+    sys_ver_err=$?
+
+    if [ ${sys_ver_err} -eq 0 ]; then
+      log_msg "mfg: sys_ver written"
+    else
+      log_msg "mfg: sys_ver_err=${sys_ver_err}"
+      return
+    fi
+  fi
+  pad_len=$((${sys_ver_max_len}-${#MFG_SYS_VER}))
+  add_trailing_null ${pad_len} ${tmp_file}
+
+  if [ -n "${MFG_BSB_MFR}" ]; then
+    log_msg "mfg: BSB_MFR=${MFG_BSB_MFR}"
+
+    if [ ${#MFG_BSB_MFR} -gt ${bsb_mfr_max_len} ]; then
+      log_msg "mfg: BSB_MFR exceeding max length ${bsb_mfr_max_len}"
+      return
+    fi
+
+    printf "${MFG_BSB_MFR}" >> ${tmp_file} 2>>${log_file}
+    bsb_mfr_err=$?
+
+    if [ ${bsb_mfr_err} -eq 0 ]; then
+      log_msg "mfg: bsb_mfr written"
+    else
+      log_msg "mfg: bsb_mfr_err=${bsb_mfr_err}"
+      return
+    fi
+  fi
+  pad_len=$((${bsb_mfr_max_len}-${#MFG_BSB_MFR}))
+  add_trailing_null ${pad_len} ${tmp_file}
+
+  if [ -n "${MFG_BSB_PDN}" ]; then
+    log_msg "mfg: BSB_PDN=${MFG_BSB_PDN}"
+
+    if [ ${#MFG_BSB_PDN} -gt ${bsb_pdn_max_len} ]; then
+      log_msg "mfg: BSB_PDN exceeding max length ${bsb_pdn_max_len}"
+      return
+    fi
+
+    printf "${MFG_BSB_PDN}" >> ${tmp_file} 2>>${log_file}
+    bsb_pdn_err=$?
+
+    if [ ${bsb_pdn_err} -eq 0 ]; then
+      log_msg "mfg: bsb_pdn written"
+    else
+      log_msg "mfg: bsb_pdn_err=${bsb_pdn_err}"
+      return
+    fi
+  fi
+  pad_len=$((${bsb_pdn_max_len}-${#MFG_BSB_PDN}))
+  add_trailing_null ${pad_len} ${tmp_file}
+
+  if [ -n "${MFG_BSB_VER}" ]; then
+    log_msg "mfg: BSB_VER=${MFG_BSB_VER}"
+
+    if [ ${#MFG_BSB_VER} -gt ${bsb_ver_max_len} ]; then
+      log_msg "mfg: BSB_VER exceeding max length ${bsb_ver_max_len}"
+      return
+    fi
+
+    printf "${MFG_BSB_VER}" >> ${tmp_file} 2>>${log_file}
+    bsb_ver_err=$?
+
+    if [ ${bsb_ver_err} -eq 0 ]; then
+      log_msg "mfg: bsb_ver written"
+    else
+      log_msg "mfg: bsb_ver_err=${bsb_ver_err}"
+      return
+    fi
+  fi
+  pad_len=$((${bsb_ver_max_len}-${#MFG_BSB_VER}))
+  add_trailing_null ${pad_len} ${tmp_file}
+
+  if [ -n "${MFG_BSB_SN}" ]; then
+    log_msg "mfg: BSB_SN=${MFG_BSB_SN}"
+
+    if [ ${#MFG_BSB_SN} -gt ${bsb_sn_max_len} ]; then
+      log_msg "mfg: BSB_SN exceeding max length ${bsb_sn_max_len}"
+      return
+    fi
+
+    printf "${MFG_BSB_SN}" >> ${tmp_file} 2>>${log_file}
+    bsb_sn_err=$?
+
+    if [ ${bsb_sn_err} -eq 0 ]; then
+      log_msg "mfg: bsb_sn written"
+    else
+      log_msg "mfg: bsb_sn_err=${bsb_sn_err}"
+      return
+    fi
+  fi
+  pad_len=$((${bsb_sn_max_len}-${#MFG_BSB_SN}))
+  add_trailing_null ${pad_len} ${tmp_file}
+
+  log_msg "mfgext: bin file create at ${tmp_file}"
+  $(${MKCAP} --cfg-data=${tmp_file} ${MFGEXT_CAPSULE})
+  log_msg "mfgext: capsule file create at ${MFGEXT_CAPSULE}"
+  (${BFREC} --capsule ${MFGEXT_CAPSULE})
 }
 
 icm_cfg()
@@ -713,7 +928,7 @@ boot_cfg()
         mac=$(printf '%012x' ${mac})
         # shellcheck disable=SC2116,SC2096,SC2086
         mac=$(echo ${mac:0:2}:${mac:2:2}:${mac:4:2}:${mac:6:2}:${mac:8:2}:${mac:10:2})
-  
+
         if [ "${proto}" = "IPV4" ]; then
           boot_cfg_add_len "${tmp_file}" $((104 + vlan_len + l4proto_len))
         else
@@ -722,12 +937,12 @@ boot_cfg()
         boot_cfg_add_name ${tmp_file} "${entry}"
         boot_cfg_add_pcie "${tmp_file}" "${ifname}"
         ;;
-  
+
       *)
         continue
         ;;
       esac
-  
+
       boot_cfg_add_eth "${tmp_file}" "${mac}"
 
       # Remove old VLAN configuration
@@ -753,7 +968,7 @@ boot_cfg()
         fi
         boot_cfg_add_vlan "${tmp_file}" "${vlan}"
       fi
-  
+
       if [ "${proto}" = "IPV4" ]; then
         boot_cfg_add_ipv4 "${tmp_file}"
       else
@@ -766,7 +981,7 @@ boot_cfg()
 
       boot_cfg_add_tail "${tmp_file}"
     fi
-  
+
     if [ -e "${tmp_file}" ]; then
       tmp=$(printf '%04x' ${idx})
       cp ${tmp_file} "${efivars}/Boot${tmp}-${efi_global_var_guid}"
@@ -774,7 +989,7 @@ boot_cfg()
       [ -n "${boot_order}" ] && boot_order="${boot_order},"
       boot_order="${boot_order}${tmp}"
       idx=$((idx + 1))
-    fi 
+    fi
   done
 
   efibootmgr -o "${boot_order}" >/dev/null
@@ -815,6 +1030,7 @@ test "$(ls -A ${efivars})" || mount -t efivarfs none ${efivars}
 
 icm_cfg
 mfg_cfg
+mfg_ext_cfg
 sys_cfg
 misc_cfg
 boot_cfg
