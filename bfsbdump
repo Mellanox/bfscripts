@@ -144,7 +144,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Dump BlueField platform secure boot status information.")
     options = parser.parse_args()
 
-    EfiVar="/sys/firmware/efi/efivars/BfSbStatus-8be4df61-93ca-11d2-aa0d-00e098032b8c"
+    EfiVarOld="/sys/firmware/efi/efivars/BfSbStatus-8be4df61-93ca-11d2-aa0d-00e098032b8c"
+    EfiVarNew="/sys/firmware/efi/efivars/BfSbStatus-487ff588-fb71-4b19-9100-ebe067aa1af0"
+
+    if os.path.exists(EfiVarNew):
+        EfiVar = EfiVarNew
+    else:
+        EfiVar = EfiVarOld
 
     if os.path.exists(EfiVar):
         with open(EfiVar, "rb") as var:
