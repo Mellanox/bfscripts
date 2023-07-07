@@ -946,7 +946,7 @@ else
     bl32keycert=${bfbdir}/dump-bl32-key-cert-v${version}
     bl32key=${tmpdir}/bl32key.der
     bl32cert=${bfbdir}/dump-bl32-cert-v${version}
-    bl32=${bfbdir}/dump-bl32-v${version}
+    bl32=${bfbdir}/dump-bl32-v0
 
     rm -f $bl32key
 
@@ -964,7 +964,7 @@ else
 
         # Read BL32 Key Certificate public key
         read_extension_key \
-            "1.3.6.1.4.1.33049.2100.701" \
+            "1.3.6.1.4.1.33049.2100.901" \
             $bl32keycert \
             $bl32key
         
