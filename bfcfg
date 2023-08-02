@@ -30,7 +30,10 @@
 # shellcheck disable=SC2059
 true
 
-bfcfg_version=0.3
+${BFDBG}
+
+bfcfg_version=0.4
+bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
 dump_mode=0
@@ -918,8 +921,9 @@ boot_cfg()
 
       NIC_P0|NIC_P1)
         mac=$(get_hca_p0_mac)
-        if [ -z "${mac}" ] || [ ."${mac}" = ."N/A" ]; then
+        if [ -z "${mac}" ] || [ ."${mac}" = ."N/A" ] || [ ."${mac}" = ."0xfeffffffffff" ]; then
           log_msg "boot: failed to get MAC for ${entry}"
+          bfcfg_rc=1
           continue
         fi
         if [ "${ifname}" = "NIC_P1" ]; then
@@ -1035,3 +1039,5 @@ sys_cfg
 misc_cfg
 boot_cfg
 sync
+
+exit $bfcfg_rc
