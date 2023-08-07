@@ -1,4 +1,4 @@
-Source: mlxbf-scripts
+Source: bfscripts
 Section: net
 Priority: optional
 Maintainer: Vladimir Sokolovsky <vlad@mellanox.com>
@@ -8,20 +8,26 @@ Standards-Version: 4.1.2
 Vcs-Browser: https://github.com/Mellanox/bfscripts
 Vcs-Git: https://github.com/Mellanox/bfscripts.git
 
+Package: bfscripts
+Architecture: any
+Depends: ${misc:Depends}, mlxbf-bootctl, python3
+Description: Contains Mellanox BlueField scripts
+ Contains Mellanox BlueField scripts that serve different ancillary purposes.
+
 Package: mlxbf-scripts
 Architecture: any
-Depends: ${misc:Depends}, mlxbf-bootctl, mlxbf-bootimages, python3
+Depends: ${misc:Depends}, mlxbf-bootimages, bfscripts
 Description: Contains Mellanox BlueField scripts
  Contains Mellanox BlueField scripts that serve different ancillary purposes.
 
 Package: mlxbf-scripts-devsigned
 Architecture: any
-Depends: ${misc:Depends}, mlxbf-bootctl, mlxbf-bootimages-devsigned, python3
+Depends: ${misc:Depends}, mlxbf-bootimages-devsigned, bfscripts
 Description: Contains Mellanox BlueField scripts
  Contains Mellanox BlueField scripts that serve different ancillary purposes.
 
 Package: mlxbf-scripts-signed
 Architecture: any
-Depends: ${misc:Depends}, mlxbf-bootctl, mlxbf-bootimages-signed, python3
+Depends: ${misc:Depends}, mlxbf-bootimages-signed, bfscripts
 Description: Contains Mellanox BlueField scripts
  Contains Mellanox BlueField scripts that serve different ancillary purposes.

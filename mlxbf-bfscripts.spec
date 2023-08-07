@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Summary: Utility scripts for managing Mellanox BlueField hardware
-Name: mlxbf-bfscripts
+Name: bfscripts
 Version: 3.6.0
 URL: https://github.com/Mellanox/bfscripts
 Release: 1%{?dist}
@@ -11,7 +11,7 @@ BuildArch: noarch
 
 Source: mlxbf-bfscripts-%{version}.tar.gz
 
-BuildRequires: systemd-rpm-macros
+#BuildRequires: systemd-rpm-macros
 BuildRequires: python3-devel
 BuildRequires: /usr/bin/pathfix.py
 
@@ -30,19 +30,22 @@ Requires: systemd
 %package -n mlxbf-bfscripts
 Summary: Utility scripts for managing Mellanox BlueField hardware
 Requires: mlxbf-bootimages
-%description unsigned
+Requires: bfscripts
+%description -n mlxbf-bfscripts
 Useful scripts for managing Mellanox BlueField hardware.
 
 %package -n mlxbf-bfscripts-devsigned
 Summary: Utility scripts for managing Mellanox BlueField hardware
 Requires: mlxbf-bootimages-devsigned
-%description devsigned
+Requires: bfscripts
+%description -n mlxbf-bfscripts-devsigned
 Useful scripts for managing Mellanox BlueField hardware.
 
 %package -n mlxbf-bfscripts-signed
 Summary: Utility scripts for managing Mellanox BlueField hardware
 Requires: mlxbf-bootimages-signed
-%description signed
+Requires: bfscripts
+%description -n mlxbf-bfscripts-signed
 Useful scripts for managing Mellanox BlueField hardware.
 
 %description
@@ -143,6 +146,10 @@ install -p mlx-uefi.quirk %{fwupdquirkdir}/
 %attr(644, root, root) %{_datadir}/fwupd/quirks.d/mlx-uefi.quirk
 
 %doc README.md
+
+%files -n mlxbf-bfscripts
+%files -n mlxbf-bfscripts-devsigned
+%files -n mlxbf-bfscripts-signed
 
 %changelog
 * Thu May 20 2021 Spencer Lingard <spencer@nvidia.com> - 3.6.0-1
