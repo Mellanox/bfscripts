@@ -16,8 +16,6 @@ BuildRequires: python3-devel
 BuildRequires: /usr/bin/pathfix.py
 
 Requires: mlxbf-bootctl
-# Note: mlxbf-bootimages is provided by mlxbf-aarch64-firmware on Fedora.
-Requires: mlxbf-bootimages
 Requires: bash
 Requires: python3
 Requires: grub2-tools
@@ -28,6 +26,24 @@ Requires: pciutils
 Requires: util-linux
 Requires: binutils
 Requires: systemd
+
+%package -n mlxbf-bfscripts
+Summary: Utility scripts for managing Mellanox BlueField hardware
+Requires: mlxbf-bootimages
+%description unsigned
+Useful scripts for managing Mellanox BlueField hardware.
+
+%package -n mlxbf-bfscripts-devsigned
+Summary: Utility scripts for managing Mellanox BlueField hardware
+Requires: mlxbf-bootimages-devsigned
+%description devsigned
+Useful scripts for managing Mellanox BlueField hardware.
+
+%package -n mlxbf-bfscripts-signed
+Summary: Utility scripts for managing Mellanox BlueField hardware
+Requires: mlxbf-bootimages-signed
+%description signed
+Useful scripts for managing Mellanox BlueField hardware.
 
 %description
 Useful scripts for managing Mellanox BlueField hardware.

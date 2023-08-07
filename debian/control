@@ -13,3 +13,15 @@ Architecture: any
 Depends: ${misc:Depends}, mlxbf-bootctl, mlxbf-bootimages, python3
 Description: Contains Mellanox BlueField scripts
  Contains Mellanox BlueField scripts that serve different ancillary purposes.
+
+Package: mlxbf-scripts-devsigned
+Architecture: any
+Depends: ${misc:Depends}, mlxbf-bootctl, mlxbf-bootimages-devsigned, python3
+Description: Contains Mellanox BlueField scripts
+ Contains Mellanox BlueField scripts that serve different ancillary purposes.
+
+Package: mlxbf-scripts-signed
+Architecture: any
+Depends: ${misc:Depends}, mlxbf-bootctl, mlxbf-bootimages-signed, python3
+Description: Contains Mellanox BlueField scripts
+ Contains Mellanox BlueField scripts that serve different ancillary purposes.
