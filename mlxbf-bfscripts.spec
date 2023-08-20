@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Summary: Utility scripts for managing Mellanox BlueField hardware
-Name: bfscripts
+Name: mlxbf-bfscripts
 Version: 3.6.0
 URL: https://github.com/Mellanox/bfscripts
 Release: 1%{?dist}
@@ -11,11 +11,13 @@ BuildArch: noarch
 
 Source: mlxbf-bfscripts-%{version}.tar.gz
 
-#BuildRequires: systemd-rpm-macros
+BuildRequires: systemd-rpm-macros
 BuildRequires: python3-devel
 BuildRequires: /usr/bin/pathfix.py
 
 Requires: mlxbf-bootctl
+# Note: mlxbf-bootimages is provided by mlxbf-aarch64-firmware on Fedora.
+Requires: mlxbf-bootimages
 Requires: bash
 Requires: python3
 Requires: grub2-tools
@@ -26,27 +28,6 @@ Requires: pciutils
 Requires: util-linux
 Requires: binutils
 Requires: systemd
-
-%package -n mlxbf-bfscripts
-Summary: Utility scripts for managing Mellanox BlueField hardware
-Requires: mlxbf-bootimages
-Requires: bfscripts
-%description -n mlxbf-bfscripts
-Useful scripts for managing Mellanox BlueField hardware.
-
-%package -n mlxbf-bfscripts-devsigned
-Summary: Utility scripts for managing Mellanox BlueField hardware
-Requires: mlxbf-bootimages-devsigned
-Requires: bfscripts
-%description -n mlxbf-bfscripts-devsigned
-Useful scripts for managing Mellanox BlueField hardware.
-
-%package -n mlxbf-bfscripts-signed
-Summary: Utility scripts for managing Mellanox BlueField hardware
-Requires: mlxbf-bootimages-signed
-Requires: bfscripts
-%description -n mlxbf-bfscripts-signed
-Useful scripts for managing Mellanox BlueField hardware.
 
 %description
 Useful scripts for managing Mellanox BlueField hardware.
@@ -146,10 +127,6 @@ install -p mlx-uefi.quirk %{fwupdquirkdir}/
 %attr(644, root, root) %{_datadir}/fwupd/quirks.d/mlx-uefi.quirk
 
 %doc README.md
-
-%files -n mlxbf-bfscripts
-%files -n mlxbf-bfscripts-devsigned
-%files -n mlxbf-bfscripts-signed
 
 %changelog
 * Thu May 20 2021 Spencer Lingard <spencer@nvidia.com> - 3.6.0-1
