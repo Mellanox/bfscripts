@@ -1,4 +1,4 @@
-Source: bfscripts
+Source: mlxbf-scripts
 Section: net
 Priority: optional
 Maintainer: Vladimir Sokolovsky <vlad@mellanox.com>
