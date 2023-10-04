@@ -28,6 +28,7 @@ Requires: pciutils
 Requires: util-linux
 Requires: binutils
 Requires: systemd
+Requires: gzip
 
 %description
 Useful scripts for managing Mellanox BlueField hardware.
