@@ -108,6 +108,25 @@ print_bfb_file_vers () {
     # Keep UEFI version and use it to determine BSP version as well
     UEFI_VER="$(strings -el "$BFB_PATH" | grep "BlueField" | cut -d':' -f 2)"
 
+    # The UEFI image may be compressed. If it is, decompress before searching
+    # for version strings
+    UEFI_IMAGE="$BFB_PATH"
+    if [ -z "$UEFI_VER" ]; then
+      mkdir "$TMP_DIR"/uefi
+      cd "$TMP_DIR"/uefi
+      mlx-mkbfb -x "$BFB_PATH"
+      gzipped=$(file dump-bl33-v0 | grep gzip)
+      if [ -n "$gzipped" ]; then
+        mv dump-bl33-v0 dump-bl33-v0.gz
+        gunzip dump-bl33-v0.gz
+        UEFI_VER="$(strings -el dump-bl33-v0 | grep "BlueField" | cut -d':' -f 2)"
+      else
+        echo "$PROGNAME: warn: UEFI image not compressed and no version info"
+      fi
+      UEFI_IMAGE=$(pwd)/dump-bl33-v0
+      cd - >/dev/null
+    fi
+
     echo BlueField UEFI version: $UEFI_VER
 
     # sed regex needs to be escaped heavily, so in more normal terms:
@@ -117,7 +136,7 @@ print_bfb_file_vers () {
     BSP_MAJOR_MINOR_PATCH="$(echo "$UEFI_VER" | sed 's/\(.\+\..\+\..\+\).*-[0-9]\+-g[0-9a-fA-F]\+/\1/')"
 
     # Find build ID
-    BUILD_ID="$(strings -el "$BFB_PATH" | grep "BId" | sed "s/^BId//")"
+    BUILD_ID="$(strings -el "$UEFI_IMAGE" | grep "BId" | sed "s/^BId//")"
 
     if [ -z "$BUILD_ID" ]; then
         echo "$PROGNAME: warn: could not find UEFI build ID (likely bootloader too old, using placeholder value)" >&2
