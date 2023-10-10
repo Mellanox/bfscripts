@@ -64,9 +64,12 @@ compare_versions () {
     fi
 }
 
-BUILD_ATF=$(strings $BOOTIMG_LOCATION | grep -m 1 "(\(release\|debug\))")
-BUILD_UEFI=$(strings -e l $BOOTIMG_LOCATION | grep "BlueField" |\
-    cut -d':' -f 2)
+bfver_out="$( bfver --file $BOOTIMG_LOCATION )"
+
+BUILD_ATF=$( echo "$bfver_out" | grep -m 1 "ATF" | cut -d':' -f 2,3 | \
+    sed -e 's/[[:space:]]//' )
+BUILD_UEFI=$( echo "$bfver_out" | grep -m 1 "UEFI" | cut -d':' -f 2 | \
+    sed -e 's/[[:space:]]//' )
 
 bfver_out="$( bfver )"
 
