@@ -35,23 +35,19 @@ import struct
 import binascii
 import os
 import sys
-import subprocess
 
 LifeCycleState = [ 'Production', 'Secure', 'Non-Secure', 'RMA' ]
 
-DeviceIdTable = {
-    '0x00000211': 'BlueField1',
-    '0x00000214': 'BlueField2',
-    '0x0000021c': 'BlueField3'
-}
-
+# Figure out which platform searching for an ACPI table specific to the BF version
 def GetPlatformName():
-    Out = subprocess.run(['bfhcafw', 'mcra', '0xf0014.0:16'], stdout=subprocess.PIPE)
-    DeviceId = Out.stdout[:-1].decode('utf-8')
-    if DeviceId in DeviceIdTable:
-        return DeviceIdTable[DeviceId]
+    if os.popen('hexdump -C /sys/firmware/acpi/tables/SSDT* | grep MLNXBF02').read():
+        return 'BlueField1'
+    elif os.popen('hexdump -C /sys/firmware/acpi/tables/SSDT* | grep MLNXBF22').read():
+        return 'BlueField2'
+    elif os.popen('hexdump -C /sys/firmware/acpi/tables/SSDT* | grep MLNXBF33').read():
+        return 'BlueField3'
     else:
-        print('Error! can not read device id', file=sys.stderr)
+        print('Error! can not read platform name', file=sys.stderr)
         sys.exit (1)
 
 def CountSetBits(n):
@@ -144,7 +140,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Dump BlueField platform secure boot status information.")
     options = parser.parse_args()
 
-    EfiVar="/sys/firmware/efi/efivars/BfSbStatus-8be4df61-93ca-11d2-aa0d-00e098032b8c"
+    '''
+    Initially BfSbStatus EFI variable is created using the EFI Global Variable GUID which
+    is not platform specific and might cause confusions among variables managed by common
+    drivers and variables managed by the platform drivers. Thus, a platform GUID has been
+    introduced and as a result the EFI Variable file name in efivar file system must match
+    the current GUID used to create the variable.
+    '''
+    if os.path.exists("/sys/firmware/efi/efivars/BfSbStatus-8be4df61-93ca-11d2-aa0d-00e098032b8c"):
+        EfiVar="/sys/firmware/efi/efivars/BfSbStatus-8be4df61-93ca-11d2-aa0d-00e098032b8c"
+    else:
+        EfiVar="/sys/firmware/efi/efivars/BfSbStatus-487ff588-fb71-4b19-9100-ebe067aa1af0"
 
     if os.path.exists(EfiVar):
         with open(EfiVar, "rb") as var:
@@ -153,7 +159,7 @@ if __name__ == "__main__":
         Sb = ChipSecureBootStatus()
         Sb.Decode(Data)
         Sb.Dump()
-    
+
     else:
         print('Error! cannot find EFI variable', file=sys.stderr)
         sys.exit(1)
