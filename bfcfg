@@ -42,7 +42,6 @@ efivars=/sys/firmware/efi/efivars
 efi_global_var_guid=8be4df61-93ca-11d2-aa0d-00e098032b8c
 efi_bfcfg_var_guid=487ff588-fb71-4b19-9100-ebe067aa1af0
 efi_vlan_var_guid=9e23d768-d2f3-4366-9fc3-3a7aba864374
-rshim_efi_mac_sysfs=${efivars}/RshimMacAddr-${efi_global_var_guid}
 pxe_dhcp_class_id_sysfs=${efivars}/DhcpClassId-${efi_global_var_guid}
 
 mfg_sysfs_dir=/sys/bus/platform/devices/MLNXBF04:00/driver
@@ -51,6 +50,14 @@ if [ ! -e $mfg_sysfs_dir/oob_mac ]; then
 fi
 oob_mac_sysfs=${mfg_sysfs_dir}/oob_mac
 large_icm_sysfs=${mfg_sysfs_dir}/large_icm
+
+# For RshimMacAddr use the new (non global) GUID if that EFI var exists,
+# else fall back to the Global GUID
+if [ -e "${efivars}/RshimMacAddr-${efi_bfcfg_var_guid}" ]; then
+   rshim_efi_mac_sysfs="${efivars}/RshimMacAddr-${efi_bfcfg_var_guid}"
+else
+  rshim_efi_mac_sysfs="${efivars}/RshimMacAddr-${efi_global_var_guid}"
+fi
 
 ECHO=${ECHO:-echo}
 
@@ -75,6 +82,7 @@ mfg_cfg()
   local uuid_sysfs=${mfg_sysfs_dir}/uuid
   local rev_sysfs=${mfg_sysfs_dir}/rev
   local oob_efi_mac_sysfs=${efivars}/OobMacAddr-${efi_global_var_guid}
+  local oob_bfcfg_mac_sysfs=${efivars}/OobMacAddr-${efi_bfcfg_var_guid}
   local mac_err opn_err mac
 
   if [ $dump_mode -eq 1 ]; then
@@ -111,6 +119,12 @@ mfg_cfg()
       mac="${MFG_OOB_MAC//:/\\x}"
       mac="\\x07\\x00\\x00\\x00\\x${mac}"
       printf "${mac}" > ${tmp_file}
+
+      # Preparing for ArmSystemReady, write our own local GUID
+      # Writing our Own Local GUID
+      chattr -i ${oob_bfcfg_mac_sysfs} 2>/dev/null
+      cp ${tmp_file} ${oob_bfcfg_mac_sysfs}
+      # Writing the Global UEFI GUID (to be removed in the future)
       chattr -i ${oob_efi_mac_sysfs} 2>/dev/null
       cp ${tmp_file} ${oob_efi_mac_sysfs}
       rm -f ${tmp_file}
