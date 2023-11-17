@@ -32,13 +32,17 @@ true
 
 ${BFDBG}
 
-bfcfg_version=0.4
+bfcfg_version=2.0
 bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
 dump_mode=0
 
+mlxmkcap=/lib/firmware/mellanox/boot/capsule/scripts/mlx-mkcap
+
 efivars=/sys/firmware/efi/efivars
+sys_cfg_sysfs=${efivars}/BfSysCfg-9c759c02-e5a3-45e4-acfc-c34a500628a6
+redfish_cfg_sysfs=${efivars}/BfRedfish-ce3e5882-6770-4d5e-aa45-90f909da2446
 efi_global_var_guid=8be4df61-93ca-11d2-aa0d-00e098032b8c
 efi_bfcfg_var_guid=487ff588-fb71-4b19-9100-ebe067aa1af0
 efi_vlan_var_guid=9e23d768-d2f3-4366-9fc3-3a7aba864374
@@ -65,7 +69,33 @@ mfg_lock()
   echo 1 > ${mfg_sysfs_dir}/mfg_lock 2>>${log_file}
 }
 
-mfg_cfg()
+delete_efi_var()
+{
+  local in_efivarfs=$1
+
+  [ ${dump_mode} -eq 1 ] && return
+
+  if [ -e "${in_efivarfs}" ]; then
+    log_msg "mfg: delete ${in_efivarfs}"
+    chattr -i ${in_efivarfs}
+    rm -f ${in_efivarfs}
+  fi
+}
+
+mfg_reset_deps()
+{
+  # Cleanup configuration dependencies if needed
+  if [ ${has_sys_cfg} -eq 0 ]; then
+    # Delete SYS Config data
+    delete_efi_var "${sys_cfg_sysfs}"
+  fi
+  if [ ${has_redfish_cfg} -eq 0 ]; then
+    # Delete RDF Config
+    delete_efi_var "${redfish_cfg_sysfs}"
+  fi
+}
+
+mfg_sysfs_cfg()
 {
   local tmp_file=/tmp/.bfcfg-mfg-data
   local opn_sysfs=${mfg_sysfs_dir}/opn
@@ -77,16 +107,7 @@ mfg_cfg()
   local oob_efi_mac_sysfs=${efivars}/OobMacAddr-${efi_global_var_guid}
   local mac_err opn_err mac
 
-  if [ $dump_mode -eq 1 ]; then
-    [ -e "${oob_mac_sysfs}" ] && echo "mfg: MFG_OOB_MAC=$(cat ${oob_mac_sysfs} 2>/dev/null)"
-    [ -e "${opn_sysfs}" ] && echo "mfg: MFG_OPN=$(cat ${opn_sysfs} 2>/dev/null)"
-    [ -e "${sku_sysfs}" ] && echo "mfg: MFG_SKU=$(cat ${sku_sysfs} 2>/dev/null)"
-    [ -e "${modl_sysfs}" ] && echo "mfg: MFG_MODL=$(cat ${modl_sysfs} 2>/dev/null)"
-    [ -e "${sn_sysfs}" ] && echo "mfg: MFG_SN=$(cat ${sn_sysfs} 2>/dev/null)"
-    [ -e "${uuid_sysfs}" ] && echo "mfg: MFG_UUID=$(cat ${uuid_sysfs} 2>/dev/null)"
-    [ -e "${rev_sysfs}" ] && echo "mfg: MFG_REV=$(cat ${rev_sysfs} 2>/dev/null)"
-    return
-  fi
+  [ $dump_mode -eq 1 ] && return
 
   if [ -z "${MFG_OOB_MAC}" ] || [ -z "${MFG_OPN}" ] || [ -z "${MFG_SKU}" ] ||
      [ -z "${MFG_MODL}" ] || [ -z "${MFG_SN}" ] || [ -z "${MFG_UUID}" ] ||
@@ -199,23 +220,234 @@ mfg_cfg()
   fi
 
   mfg_lock
+  mfg_sysfs_cfg_done=1
+  mfg_reset_deps
 }
 
-add_trailing_null()
+mfg_cfg_set_bytes()
 {
-  for ((i = 0; i<${1}; i++))
-  do
-    printf '\0' >> ${2} 2>>${log_file}
-  done
+  local out_file=$1
+  local name=$2
+  local offset=$3
+  local size=$4
+  local value=$5
+
+  [ ${dump_mode} -eq 1 ] && return
+
+  if [ -n "${value}" ] && [ -f "${out_file}" ]; then
+    # Most of the fields are of type strings, thus check the number
+    # of charcters per string. Only exception for the OOB MAC.
+    # The OOB MAC is stored in hex format; e.g., \xAA\xBB\xCC\xDD\xEE\xFF,
+    # total of 24 charcters
+    if [ ${#value} -gt ${size} ] && [ "${name}" != "MFG_OOB_MAC" ]; then
+        log_msg "mfg: ${name} exceeding max length ${size}"
+        return
+    elif [ ${#value} -gt 24 ] && [ "${name}" == "MFG_OOB_MAC" ]; then
+        log_msg "mfg: MFG_OOB_MAC exceeding max length 6 bytes"
+        return
+    else
+      printf "${value}" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+      err=$?
+      if [ ${err} -eq 0 ]; then
+        log_msg "mfg: ${name} written, value=${value}"
+      else
+        log_msg "mfg: modl_err=${err}"
+        return
+      fi
+      has_cfg=1
+    fi
+  fi
 }
 
-mfg_ext_cfg()
+copy_efi_var_data()
 {
-  local tmp_file=/tmp/.bfcfg-data
-  local MKCAP=/usr/lib/firmware/mellanox/boot/capsule/scripts/mlx-mkcap
-  local MFGEXT_CAPSULE=/tmp/BfCfgCapsule
-  local BFREC=bfrec
-  local MFG_LEN=256
+  local out_file=$1
+  local in_efivarfs=$2
+  local offset=$3
+  local size=$4
+
+  [ ${dump_mode} -eq 1 ] && return
+
+  if [ -e "${in_efivarfs}" ] && [ -f "${out_file}" ]; then
+    chattr -i ${in_efivarfs}
+    # Copy the EFI variable data, skip variable header (4 bytes)
+    dd if="${in_efivarfs}" of="${out_file}" seek="${offset}" skip=4 bs=1 count=${size} conv=notrunc 2> /dev/null
+    err=$?
+    if [ ${err} -eq 0 ]; then
+      log_msg "mfg: ${in_efivarfs} data written to ${out_file}"
+    else
+      log_msg "mfg: failed to write ${in_efivarfs} data to ${out_file}"
+      log_msg "mfg: modl_err=${err}"
+      return
+    fi
+  fi
+}
+
+mfg_cfg_to_bin()
+{
+  local bin_file=$1
+
+  [ -f "${bin_file}" ] && rm -f ${bin_file}
+  # Create empty MFG blob; it contains MFG data and MFG extended data
+  # and occupies 16 pages of 256 bytes within the EEPROM
+  #
+  # Layout:
+  #   MFG Data      (off:   0, len: 256 bytes)
+  #   MFG Extension (off: 256, len:2048 bytes)
+  #   SYS Config    (off:2304, len:  64 bytes)
+  #   RDF Config    (off:2368, len:  32 bytes)
+  #   Reserved      (off:2400, len:1696 bytes)
+  #
+  dd if=/dev/zero of=${bin_file} count=16 bs=256
+  has_cfg=0
+
+  [ ! -f "${bin_file}" ] && return
+
+  if [ -z "${MFG_OOB_MAC}" ] || [ -z "${MFG_OPN}" ] || [ -z "${MFG_SKU}" ] ||
+     [ -z "${MFG_MODL}" ] || [ -z "${MFG_SN}" ] || [ -z "${MFG_UUID}" ] ||
+     [ -z "${MFG_REV}" ] ; then
+    log_msg "mfg: bin: skip mfg since one or more of the following are unspecified:"
+    log_msg "MFG_OOB_MAC, MFG_OPN, MFG_SKU, MFG_MODL, MFG_SN, MFG_UUID, MFG_REV"
+  elif [ ${mfg_sysfs_cfg_done} -eq 0 ]; then
+    #
+    # MFG Layout (1x 256B)
+    #
+    # OOB_MAC (off:  0, len: 8 bytes)
+    # OPN     (off:  8, len:24 bytes)
+    # SKU     (off: 32, len:24 bytes)
+    # MODL    (off: 56, len:24 bytes)
+    # SN      (off: 80, len:24 bytes)
+    # UUID    (off:104, len:40 bytes)
+    # REV     (off:144, len: 8 bytes)
+
+    mfg_cfg_set_bytes ${bin_file} "MFG_OOB_MAC" 0 8 "\\x${MFG_OOB_MAC//:/\\x}"
+    mfg_cfg_set_bytes ${bin_file} "MFG_OPN" 8 24 "${MFG_OPN}"
+    mfg_cfg_set_bytes ${bin_file} "MFG_SKU" 32 24 "${MFG_SKU}"
+    mfg_cfg_set_bytes ${bin_file} "MFG_MODL" 56 24 "${MFG_MODL}" 
+    mfg_cfg_set_bytes ${bin_file} "MFG_SN" 80 24 "${MFG_SN}"
+    mfg_cfg_set_bytes ${bin_file} "MFG_UUID" 104 80 "${MFG_UUID}"
+    mfg_cfg_set_bytes ${bin_file} "MFG_REV" 144 8 "${MFG_REV}"
+
+    # Append MFG configuration dependenices, if needed.
+    if [ ${has_cfg} -eq 1 ]; then
+      if [ ${has_sys_cfg} -eq 1 ]; then
+        # Copy SYS Config data
+        copy_efi_var_data ${bin_file} "${sys_cfg_sysfs}" 2304 64
+      fi
+      if [ ${has_redfish_cfg} -eq 1 ]; then
+        # Copy RDF Config
+        copy_efi_var_data ${bin_file} "${redfish_cfg_sysfs}" 2368 32
+      fi
+    fi
+
+  elif [ ${mfg_sysfs_cfg_done} -eq 0 ]; then
+    log_msg "mfg: bin: skip mfg since configured via sysfs"
+  fi
+
+  if [ -z "${MFG_SYS_MFR}" ] && [ -z "${MFG_SYS_PDN}" ] && [ -z "${MFG_SYS_VER}" ] &&
+     [ -z "${MFG_BSB_MFR}" ] && [ -z "${MFG_BSB_PDN}" ] && [ -z "${MFG_BSB_VER}" ] &&
+     [ -z "${MFG_BSB_SN}" ] ; then
+    log_msg "mfg: bin: skip mfg extension since none of the following are specified:"
+    log_msg "MFG_SYS_MFR, MFG_SYS_PDN, MFG_SYS_VER, MFG_BSB_MFR, MFG_BSB_PDN, MFG_BSB_VER, MFG_BSB_SN"
+  else
+    #
+    # MFG Extension Layout (8x 256B)
+    #
+    # SYS_MFR (off:  0 + 256, len:24 bytes)
+    # SYS_PDN (off: 24 + 256, len:24 bytes)
+    # SYS_VER (off: 48 + 256, len:512 bytes)
+    # BSB_MFR (off:560 + 256, len:24 bytes)
+    # BSB_PDN (off:584 + 256, len:24 bytes)
+    # BSB_VER (off:608 + 256, len:24 bytes)
+    # BSB_SN  (off:632 + 256, len:24 bytes)
+
+    mfg_cfg_set_bytes ${bin_file} "MFG_SYS_MFR" 256 24 "${MFG_SYS_MFR}"
+    mfg_cfg_set_bytes ${bin_file} "MFG_SYS_PDN" 280 24 "${MFG_SYS_PDN}"
+    mfg_cfg_set_bytes ${bin_file} "MFG_SYS_VER" 304 512 "${MFG_SYS_VER}"
+    mfg_cfg_set_bytes ${bin_file} "MFG_BSB_MFR" 816 24 "${MFG_BSB_MFR}" 
+    mfg_cfg_set_bytes ${bin_file} "MFG_BSB_PDN" 840 24 "${MFG_BSB_PDN}"
+    mfg_cfg_set_bytes ${bin_file} "MFG_BSB_VER" 864 24 "${MFG_BSB_VER}"
+    mfg_cfg_set_bytes ${bin_file} "MFG_BSB_SN" 888 24 "${MFG_BSB_SN}"
+  fi
+
+  if [ ${has_cfg} -eq 0 ]; then
+    log_msg "mfg: bin: configuration unspecified or incomplete. Skip binary generation."
+    rm -f ${bin_file}
+    return
+  else
+    log_msg "mfg: bin: configuration written to ${bin_file}"
+  fi
+}
+
+mfg_cfg_bin_to_cap()
+{
+  local bin_file=$1
+  local cap_file=$2
+  
+  mfg_cfg_to_bin ${bin_file}
+  has_bin=0
+
+  [ -f "${bin_file}" ] && has_bin=1
+
+  if [ ${has_bin} -eq 0 ]; then
+    log_msg "mfg: capsule: configuration blob not found. Skip capsule generation"
+    return
+  fi
+
+  ${mlxmkcap} --cfg-data ${bin_file} ${cap_file}
+  if [ $? -eq 0 ]; then
+    log_msg "mfg: capsule: file created at ${cap_file}"
+  else
+    log_msg "mfg: capsule: failed to create capsule file"
+  fi
+}
+
+mfg_cap_cfg()
+{
+  local bin_file=/tmp/.bfcfg-mfg.bin
+  local cap_file=/tmp/.bfcfg-mfg.cap
+
+  [ $dump_mode -eq 1 ] && return
+
+  mfg_cfg_bin_to_cap ${bin_file} ${cap_file}
+  has_cap=0
+
+  [ -f "${cap_file}" ] && has_cap=1
+
+  if [ ${has_cap} -eq 0 ]; then
+    log_msg "mfg: update: capsule file not found. Skip capsule update."
+    return
+  fi
+
+  #
+  # MFG capsule must be applied first, before secure boot capsule
+  # otherwise the signature verification would fail.
+  #
+  # Note that capsules are sorted by name and processed in order.
+  # Thus it is important to get the MFG capsule executed first and
+  # the capsule file name starts with '.'; it is not expected that
+  # the remaining capsule files generated outside of bfcfg command
+  # would have the '.' prefix in the filename.
+  #
+
+  bfrec --capsule ${cap_file} 2>&1 > /dev/null
+  if [ $? -eq 0 ]; then
+    log_msg "mfg: update: MFG will be updated via capsule"
+  else
+    log_msg "mfg: update: failed to update MFG via capsule"
+  fi
+
+  rm -f ${bin_file} ${cap_file}
+}
+
+mfg_cfg()
+{
+  local opn_sysfs=${mfg_sysfs_dir}/opn
+  local sku_sysfs=${mfg_sysfs_dir}/sku
+  local modl_sysfs=${mfg_sysfs_dir}/modl
+  local sn_sysfs=${mfg_sysfs_dir}/sn
+  local uuid_sysfs=${mfg_sysfs_dir}/uuid
+  local rev_sysfs=${mfg_sysfs_dir}/rev
   local sys_mfr_sysfs=${efivars}/BfCfgSysMfr-${efi_bfcfg_var_guid}
   local sys_pdn_sysfs=${efivars}/BfCfgSysPdn-${efi_bfcfg_var_guid}
   local sys_ver_sysfs=${efivars}/BfCfgSysVer-${efi_bfcfg_var_guid}
@@ -223,16 +455,15 @@ mfg_ext_cfg()
   local bsb_pdn_sysfs=${efivars}/BfCfgBsbPdn-${efi_bfcfg_var_guid}
   local bsb_ver_sysfs=${efivars}/BfCfgBsbVer-${efi_bfcfg_var_guid}
   local bsb_sn_sysfs=${efivars}/BfCfgBsbSn-${efi_bfcfg_var_guid}
-  local sys_mfr_max_len=24
-  local sys_pdn_max_len=24
-  local sys_ver_max_len=512
-  local bsb_mfr_max_len=24
-  local bsb_pdn_max_len=24
-  local bsb_ver_max_len=24
-  local bsb_sn_max_len=24
-  local pad_len=0
 
   if [ $dump_mode -eq 1 ]; then
+    [ -e "${oob_mac_sysfs}" ] && echo "mfg: MFG_OOB_MAC=$(cat ${oob_mac_sysfs} 2>/dev/null)"
+    [ -e "${opn_sysfs}" ] && echo "mfg: MFG_OPN=$(cat ${opn_sysfs} 2>/dev/null)"
+    [ -e "${sku_sysfs}" ] && echo "mfg: MFG_SKU=$(cat ${sku_sysfs} 2>/dev/null)"
+    [ -e "${modl_sysfs}" ] && echo "mfg: MFG_MODL=$(cat ${modl_sysfs} 2>/dev/null)"
+    [ -e "${sn_sysfs}" ] && echo "mfg: MFG_SN=$(cat ${sn_sysfs} 2>/dev/null)"
+    [ -e "${uuid_sysfs}" ] && echo "mfg: MFG_UUID=$(cat ${uuid_sysfs} 2>/dev/null)"
+    [ -e "${rev_sysfs}" ] && echo "mfg: MFG_REV=$(cat ${rev_sysfs} 2>/dev/null)"
     [ -e "${sys_mfr_sysfs}" ] && echo "mfg: MFG_SYS_MFR=$(tr -d '\0' < ${sys_mfr_sysfs} 2>/dev/null)"
     [ -e "${sys_pdn_sysfs}" ] && echo "mfg: MFG_SYS_PDN=$(tr -d '\0' < ${sys_pdn_sysfs} 2>/dev/null)"
     [ -e "${sys_ver_sysfs}" ] && echo "mfg: MFG_SYS_VER=$(tr -d '\0' < ${sys_ver_sysfs} 2>/dev/null)"
@@ -243,176 +474,9 @@ mfg_ext_cfg()
     return
   fi
 
-  if [ -z "${MFG_SYS_MFR}" ] && [ -z "${MFG_SYS_PDN}" ] && [ -z "${MFG_SYS_VER}" ] &&
-     [ -z "${MFG_BSB_MFR}" ] && [ -z "${MFG_BSB_PDN}" ] && [ -z "${MFG_BSB_VER}" ] &&
-     [ -z "${MFG_BSB_SN}" ] ; then
-    log_msg "mfg: skip mfg extension since none of the following are specified:"
-    log_msg "MFG_SYS_MFR, MFG_SYS_PDN, MFG_SYS_VER, MFG_BSB_MFR, MFG_BSB_PDN, MFG_BSB_VER, MFG_BSB_SN"
-    return
-  fi
-
-  if [ -e ${tmp_file} ]; then
-    rm -rf ${tmp_file}
-  fi
-
-  if [ -e ${MFGEXT_CAPSULE} ]; then
-    rm -rf ${MFGEXT_CAPSULE}
-  fi
-
-  # Reserve MFG space for future use.
-  add_trailing_null ${MFG_LEN} ${tmp_file}
-
-  if [ -n "${MFG_SYS_MFR}" ]; then
-    log_msg "mfg: SYS_MFR=${MFG_SYS_MFR}"
-
-    if [ ${#MFG_SYS_MFR} -gt ${sys_mfr_max_len} ]; then
-      log_msg "mfg: SYS_MFR exceeding max length ${sys_mfr_max_len}"
-      return
-    fi
-
-    printf "${MFG_SYS_MFR}" >> ${tmp_file} 2>>${log_file}
-    sys_mfr_err=$?
-
-    if [ ${sys_mfr_err} -eq 0 ]; then
-      log_msg "mfg: sys_mfr written"
-    else
-      log_msg "mfg: sys_mfr_err=${sys_mfr_err}"
-      return
-    fi
-  fi
-  pad_len=$((${sys_mfr_max_len}-${#MFG_SYS_MFR}))
-  add_trailing_null ${pad_len} ${tmp_file}
-
-  if [ -n "${MFG_SYS_PDN}" ]; then
-    log_msg "mfg: SYS_PDN=${MFG_SYS_PDN}"
-
-    if [ ${#MFG_SYS_PDN} -gt ${sys_pdn_max_len} ]; then
-      log_msg "mfg: SYS_PDN exceeding max length ${sys_pdn_max_len}"
-      return
-    fi
-
-    printf "${MFG_SYS_PDN}" >> ${tmp_file} 2>>${log_file}
-    sys_pdn_err=$?
-
-    if [ ${sys_pdn_err} -eq 0 ]; then
-      log_msg "mfg: sys_pdn written"
-    else
-      log_msg "mfg: sys_pdn_err=${sys_pdn_err}"
-      return
-    fi
-  fi
-  pad_len=$((${sys_pdn_max_len}-${#MFG_SYS_PDN}))
-  add_trailing_null ${pad_len} ${tmp_file}
-
-  if [ -n "${MFG_SYS_VER}" ]; then
-    log_msg "mfg: SYS_VER=${MFG_SYS_VER}"
-
-    if [ ${#MFG_SYS_VER} -gt ${sys_ver_max_len} ]; then
-      log_msg "mfg: SYS_VER exceeding max length ${sys_ver_max_len}"
-      return
-    fi
-
-    printf "${MFG_SYS_VER}" >> ${tmp_file} 2>>${log_file}
-    sys_ver_err=$?
-
-    if [ ${sys_ver_err} -eq 0 ]; then
-      log_msg "mfg: sys_ver written"
-    else
-      log_msg "mfg: sys_ver_err=${sys_ver_err}"
-      return
-    fi
-  fi
-  pad_len=$((${sys_ver_max_len}-${#MFG_SYS_VER}))
-  add_trailing_null ${pad_len} ${tmp_file}
-
-  if [ -n "${MFG_BSB_MFR}" ]; then
-    log_msg "mfg: BSB_MFR=${MFG_BSB_MFR}"
-
-    if [ ${#MFG_BSB_MFR} -gt ${bsb_mfr_max_len} ]; then
-      log_msg "mfg: BSB_MFR exceeding max length ${bsb_mfr_max_len}"
-      return
-    fi
-
-    printf "${MFG_BSB_MFR}" >> ${tmp_file} 2>>${log_file}
-    bsb_mfr_err=$?
-
-    if [ ${bsb_mfr_err} -eq 0 ]; then
-      log_msg "mfg: bsb_mfr written"
-    else
-      log_msg "mfg: bsb_mfr_err=${bsb_mfr_err}"
-      return
-    fi
-  fi
-  pad_len=$((${bsb_mfr_max_len}-${#MFG_BSB_MFR}))
-  add_trailing_null ${pad_len} ${tmp_file}
-
-  if [ -n "${MFG_BSB_PDN}" ]; then
-    log_msg "mfg: BSB_PDN=${MFG_BSB_PDN}"
-
-    if [ ${#MFG_BSB_PDN} -gt ${bsb_pdn_max_len} ]; then
-      log_msg "mfg: BSB_PDN exceeding max length ${bsb_pdn_max_len}"
-      return
-    fi
-
-    printf "${MFG_BSB_PDN}" >> ${tmp_file} 2>>${log_file}
-    bsb_pdn_err=$?
-
-    if [ ${bsb_pdn_err} -eq 0 ]; then
-      log_msg "mfg: bsb_pdn written"
-    else
-      log_msg "mfg: bsb_pdn_err=${bsb_pdn_err}"
-      return
-    fi
-  fi
-  pad_len=$((${bsb_pdn_max_len}-${#MFG_BSB_PDN}))
-  add_trailing_null ${pad_len} ${tmp_file}
-
-  if [ -n "${MFG_BSB_VER}" ]; then
-    log_msg "mfg: BSB_VER=${MFG_BSB_VER}"
-
-    if [ ${#MFG_BSB_VER} -gt ${bsb_ver_max_len} ]; then
-      log_msg "mfg: BSB_VER exceeding max length ${bsb_ver_max_len}"
-      return
-    fi
-
-    printf "${MFG_BSB_VER}" >> ${tmp_file} 2>>${log_file}
-    bsb_ver_err=$?
-
-    if [ ${bsb_ver_err} -eq 0 ]; then
-      log_msg "mfg: bsb_ver written"
-    else
-      log_msg "mfg: bsb_ver_err=${bsb_ver_err}"
-      return
-    fi
-  fi
-  pad_len=$((${bsb_ver_max_len}-${#MFG_BSB_VER}))
-  add_trailing_null ${pad_len} ${tmp_file}
-
-  if [ -n "${MFG_BSB_SN}" ]; then
-    log_msg "mfg: BSB_SN=${MFG_BSB_SN}"
-
-    if [ ${#MFG_BSB_SN} -gt ${bsb_sn_max_len} ]; then
-      log_msg "mfg: BSB_SN exceeding max length ${bsb_sn_max_len}"
-      return
-    fi
-
-    printf "${MFG_BSB_SN}" >> ${tmp_file} 2>>${log_file}
-    bsb_sn_err=$?
-
-    if [ ${bsb_sn_err} -eq 0 ]; then
-      log_msg "mfg: bsb_sn written"
-    else
-      log_msg "mfg: bsb_sn_err=${bsb_sn_err}"
-      return
-    fi
-  fi
-  pad_len=$((${bsb_sn_max_len}-${#MFG_BSB_SN}))
-  add_trailing_null ${pad_len} ${tmp_file}
-
-  log_msg "mfgext: bin file create at ${tmp_file}"
-  $(${MKCAP} --cfg-data=${tmp_file} ${MFGEXT_CAPSULE})
-  log_msg "mfgext: capsule file create at ${MFGEXT_CAPSULE}"
-  (${BFREC} --capsule ${MFGEXT_CAPSULE})
+  mfg_sysfs_cfg_done=0
+  mfg_sysfs_cfg
+  mfg_cap_cfg
 }
 
 icm_cfg()
@@ -448,7 +512,10 @@ sys_cfg_one_byte()
   local bin_value
 
   if [ ${dump_mode} -eq 1 ]; then
-    value=$(hexdump -s "${offset}" -n 1 -e '/1 "%d" "\n"' "${tmp_file}")
+    value=0
+    if [ -e ${tmp_file} ]; then
+      value=$(hexdump -s "${offset}" -n 1 -e '/1 "%d" "\n"' "${tmp_file}")
+    fi
     echo "sys: ${name}=${value}"
   elif [ -n "${value}" ]; then
     bin_value=$(echo "${value}" | tr '[:lower:]' '[:upper:]')
@@ -484,10 +551,11 @@ sys_cfg_one_byte()
 sys_cfg()
 {
   local tmp_file=/tmp/.bfcfg-sysfs-data
-  local sys_cfg_sysfs=${efivars}/BfSysCfg-9c759c02-e5a3-45e4-acfc-c34a500628a6
 
-  if [ $dump_mode -eq 0 ] && [ ! -e "${sys_cfg_sysfs}" ]; then
-    log_msg "sys: failed to find the EFI variable"
+  has_sys_cfg=0
+
+  if [ ! -e "${sys_cfg_sysfs}" ]; then
+    log_msg "sys: failed to find the ${sys_cfg_sysfs} EFI variable"
     return
   fi
 
@@ -510,6 +578,44 @@ sys_cfg()
     chattr -i ${sys_cfg_sysfs}
     cp ${tmp_file} ${sys_cfg_sysfs}
     sync
+    has_sys_cfg=1 
+  fi
+
+  rm -f ${tmp_file}
+}
+
+#
+# This function writes to the BfRedfish UEFI variable directly.
+# Below are the offsets defined in UEFI which is 4(fixed header) plus the offset
+# of the variable within the BfRedfish struct. These offsets are not supposed to
+# change in order to be backward compatible with previous releases.
+#   VARIABLE(Name)       OFFSET(Byte)  SIZE(Byte)
+#   CFG_ENABLE_REDFISH      4            1
+#   CFG_RTCSYNC             5            1
+#
+sys_redfish_cfg()
+{
+  local tmp_file=/tmp/.bfcfg-redfishfs-data
+
+  has_redfish_cfg=0
+
+  if [ ! -e "${redfish_cfg_sysfs}" ]; then
+    log_msg "sys: failed to find the ${redfish_cfg_sysfs} EFI variable"
+    return
+  fi
+
+  # shellcheck disable=SC2216
+  yes | cp -f ${redfish_cfg_sysfs} ${tmp_file}
+  has_change=0
+
+  sys_cfg_one_byte ${tmp_file} "ENABLE_REDFISH" 4 "${SYS_ENABLE_REDFISH}"
+  sys_cfg_one_byte ${tmp_file} "RTCSYNC" 5 "${SYS_RTCSYNC}"
+
+  if [ ${has_change} -eq 1 ]; then
+    chattr -i ${redfish_cfg_sysfs}
+    cp ${tmp_file} ${redfish_cfg_sysfs}
+    sync
+    has_redfish_cfg=1
   fi
 
   rm -f ${tmp_file}
@@ -1007,6 +1113,30 @@ boot_cfg()
   rm -rf ${tmp_dir} 2>/dev/null
 }
 
+# Enable UEFI Secure boot with default settings.
+# UEFI password is reset to default.
+sb_cfg()
+{
+  local sb_capsule_file=/lib/firmware/mellanox/boot/capsule/EnrollKeysCap
+
+  [ $dump_mode -eq 1 ] && return
+
+  [ "${UEFI_SECURE_BOOT}" != "TRUE" ] && return
+
+  if [ ! -f "${sb_capsule_file}" ]; then
+    log_msg "sb: failed to find the EFI capsule"
+    return
+  fi
+
+  # Enable UEFI Secure boot
+  bfrec --capsule ${sb_capsule_file} 2>&1 > /dev/null
+  if [ $? -eq 0 ]; then
+    log_msg "sb: UEFI Secure Boot will be enabled on next boot"
+  else
+    log_msg "sb: failed to enable UEFI Secure Boot"
+  fi
+}
+
 usage()
 {
   echo "syntax: bfcfg [--help|-h] [--dump|-d] [--part-info|-p]"
@@ -1039,11 +1169,24 @@ log_msg
 test "$(ls -A ${efivars})" || mount -t efivarfs none ${efivars}
 
 icm_cfg
-mfg_cfg
-mfg_ext_cfg
-sys_cfg
+if [ ${dump_mode} -eq 1 ]; then
+  # Backward compatibility; dump mfg_cfg prior
+  # to sys_cfg and sys_redfish_cfg
+  mfg_cfg
+  sys_cfg
+  sys_redfish_cfg
+else
+  # It is important to run this configuration
+  # in this specific order, because sys_cfg data
+  # and sys_redfish_cfg data might be appended
+  # to the capsule file created to program mfg_cfg
+  sys_cfg
+  sys_redfish_cfg
+  mfg_cfg
+fi
 misc_cfg
 boot_cfg
+sb_cfg
 sync
 
 exit $bfcfg_rc
