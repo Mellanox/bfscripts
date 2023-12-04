@@ -180,7 +180,7 @@ uefi_capsule_update()
     # partition to the default location in order to copy the update
     # files. It is harmless to copy the files to multiple EFI System
     # partitions.
-    device_efi=$(fdisk -l | grep -i EFI | cut -d' ' -f1 | tr '\n' ' ')
+    device_efi=$(blkid | grep -i -e 'system-boot' -e 'efi' | cut -d':' -f1 | tr '\n' ' ')
     for curr_device_efi in $device_efi
     do
         # Set EFI System partition mountpoint
