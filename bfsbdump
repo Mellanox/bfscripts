@@ -53,10 +53,20 @@ def GetPlatformName():
 def CountSetBits(n):
     return bin(n).count("1")
 
+def GetEcid():
+    str = os.popen('xxd -p /sys/firmware/acpi/tables/SSDT1 2>/dev/null | tr -d "\\n"').readline()
+    pos1 = str.find('656369643031000e')
+    pos2 = str.find('656369643233000e')
+    if (pos1 >= 0) and (pos2 >= 0):
+        return (str[pos1+16:pos1+32]) + str[pos2+16:pos2+32]
+    else:
+        return ""
+
 class ChipSecureBootStatus:
 
     def __init__(self):
         self.PlatformName = GetPlatformName()
+        self.ecid = GetEcid()
 
     def Decode(self, data):
         __StructFormat = '<I32sIHHBBBBB??B?15s'
@@ -134,6 +144,8 @@ class ChipSecureBootStatus:
                 a = (self.DotFsblVersion >>  0) & 0xFF, b = (self.DotFsblVersion >>  8) & 0xFF,
                 c = (self.DotFsblVersion >> 16) & 0xFF, d = (self.DotFsblVersion >> 24) & 0xFF ))
         print('DOT ID               : ' + str(binascii.hexlify(self.DotChipId).decode('ascii')))
+        if self.ecid:
+            print('ECID                 : ' + self.ecid)
         print('----------------------')
 
 if __name__ == "__main__":
