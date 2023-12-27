@@ -86,9 +86,10 @@ install -p bfhcafw           %{installdir}
 install -p man/bfhcafw.8     %{man8dir}
 install -p bfup              %{installdir}
 install -p man/bfup.8        %{man8dir}
-
 install -p mlx-mkbfb       %{installdir}
 install -p man/mlx-mkbfb.1 %{man1dir}
+install -p bftraining_results %{installdir}
+install -p man/bftraining_results.8 %{man8dir}
 
 install -p -d %{buildroot}%{_unitdir}
 install -p bfvcheck.service %{buildroot}%{_unitdir}/

@@ -21,6 +21,7 @@ Overview of each file:
 - **bfsbdump** Dump secure boot status information.
 - **bfsbkeys** Dump all public keys in ATF.
 - **bfsbverify** Read BFB file from file or device and verify RoTPK and CoT.
+- **bftraining_results** Read DDR5 training parameters from ACPI.
 - **bfver** Print ATF, UEFI and rootfs versions.
 - **bfvcheck** Check whether software versions installed match those in current release.
 - **bfvcheck.service** Companion service to bfvcheck, runs bfvcheck at boot time.
