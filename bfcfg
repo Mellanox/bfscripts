@@ -857,8 +857,9 @@ boot_cfg_add_ipv6()
 
 get_hca_p0_mac()
 {
-  local dev devmac devid p0mac devmac_oui
+  local dev devmac devid p0mac devmac_oui num
 
+  num=0
   base_mac=$(bfhcafw flint q 2>/dev/null | grep "^Base MAC" | awk '{print $3}')
   base_mac=$(echo $base_mac | cut -c1-6)
   p0mac="feffffffffff"
@@ -872,8 +873,10 @@ get_hca_p0_mac()
     if [ "${devmac}" \< "${p0mac}" ]; then
       p0mac=${devmac}
     fi
+    num=$((num + 1))
   done
   echo "0x${p0mac}"
+  echo "${num}"
 }
 
 #
@@ -898,7 +901,7 @@ boot_cfg()
   local tmp_vlan_file=${tmp_dir}/vlan
   local value tmp_entry old_boot_order
   local l4proto l4proto_len
-  local oob_mac_addr
+  local oob_mac_addr num
 
   [ $dump_mode -eq 1 ] && return
 
@@ -1028,13 +1031,18 @@ boot_cfg()
         ;;
 
       NIC_P0|NIC_P1)
-        mac=$(get_hca_p0_mac)
+        {
+          read -r mac
+          read -r num
+        } <<< "$(get_hca_p0_mac)"
         if [ -z "${mac}" ] || [ ."${mac}" = ."N/A" ] || [ ."${mac}" = ."0xfeffffffffff" ]; then
           log_msg "boot: failed to get MAC for ${entry}"
           bfcfg_rc=1
           continue
         fi
         if [ "${ifname}" = "NIC_P1" ]; then
+          [ -z "${num}" ] && continue
+          [ ${num} -lt 2 ] && continue
           mac=$((mac + 1))
         fi
         mac=$(printf '%012x' ${mac})
