@@ -89,10 +89,13 @@ if [ $MLXFW_SUCCESS -eq 0 ]; then
 
     BUILD_FW=$( echo "$FIRMWARE_VERSIONS" | cut -d',' -f 2 )
     RUNTIME_FW=$( echo "$FIRMWARE_VERSIONS" |  cut -d',' -f 1 )
+    LOADED_FW=$RUNTIME_FW
 
     # If FW (Running) line exists, user updated firmware, but did
     # not power cycle, so output message further down
     if echo "\"$mlxfw_out\"" | grep -q 'FW *(Running)' >/dev/null; then
+		FIRMWARE_VERSIONS=$( echo "$mlxfw_out" | awk '($1 == "FW") && ($2 == "(Running)") { print $3 "," $4 }' )
+		RUNTIME_FW=$( echo "$FIRMWARE_VERSIONS" |  cut -d',' -f 1 )
         FW_UPDATED=yes
     fi
 else
@@ -139,15 +142,15 @@ fi
 
 if [ "$FW_UPDATED" = "yes" ]; then
     cat << EOF
-WARNING: The firmware has been updated, but the chassis must be
-power cycled for changes to take effect.
+WARNING: The firmware has been updated to $LOADED_FW, but the chassis
+must be power cycled for changes to take effect.
 
 EOF
 fi
 
 echo "Version check complete."
 
-if [ -z "$version_error" ]; then
+if [ -z "$version_error" ]  && [ $FW_UPDATED == "no" ]; then
     echo "No issues found."
     exit 0
 fi
