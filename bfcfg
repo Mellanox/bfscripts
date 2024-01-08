@@ -32,7 +32,7 @@ true
 
 ${BFDBG}
 
-bfcfg_version=2.0
+bfcfg_version=2.1
 bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
@@ -383,7 +383,7 @@ mfg_cfg_bin_to_cap()
 {
   local bin_file=$1
   local cap_file=$2
-  
+
   mfg_cfg_to_bin ${bin_file}
   has_bin=0
 
@@ -394,11 +394,37 @@ mfg_cfg_bin_to_cap()
     return
   fi
 
-  ${mlxmkcap} --cfg-data ${bin_file} ${cap_file}
-  if [ $? -eq 0 ]; then
-    log_msg "mfg: capsule: file created at ${cap_file}"
+  if command -v python >/dev/null ; then
+    ${mlxmkcap} --cfg-data ${bin_file} ${cap_file}
+    if [ $? -eq 0 ]; then
+      log_msg "mfg: capsule: file created at ${cap_file}"
+    else
+      log_msg "mfg: capsule: failed to create capsule file"
+      return
+    fi
+
   else
-    log_msg "mfg: capsule: failed to create capsule file"
+    # BFB might be missing commands and modules needed to generate
+    # the EFI capsule, thus push the bin file content to the payload
+    # of the pregenerated capsule file.
+    dummy_cap=/lib/firmware/mellanox/boot/capsule/.efi_bfcfg.cap
+    bin_size=$(stat -c%s ${bin_file})
+    if [ ! -f "${dummy_cap}" ]; then
+      log_msg "mfg: capsule: missing artifacts. Skip capsule generation"
+      return
+    fi
+    cp -f ${dummy_cap} ${cap_file}
+    # Skip the EFI capsule header; the header remains unchanged.
+    # Re-write the payload starting from offset A8 (168).
+    dd if="${bin_file}" of="${cap_file}" seek=168 bs=1 count=${bin_size} conv=notrunc 2> /dev/null
+    if [ $? -eq 0 ]; then
+      log_msg "mfg: capsule: payload updated"
+      log_msg "mfg: capsule: file created at ${cap_file}"
+    else
+      log_msg "mfg: capsule: failed to update capsule payload"
+      rm -f ${cap_file}
+      return
+    fi
   fi
 }
 
