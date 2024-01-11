@@ -150,7 +150,7 @@ fi
 
 echo "Version check complete."
 
-if [ -z "$version_error" ]  && [ $FW_UPDATED == "no" ]; then
+if [ -z "$version_error" ]  && [ $FW_UPDATED = "no" ]; then
     echo "No issues found."
     exit 0
 fi
