@@ -32,7 +32,7 @@ true
 
 ${BFDBG}
 
-bfcfg_version=2.1
+bfcfg_version=2.2
 bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
@@ -308,6 +308,7 @@ mfg_cfg_to_bin()
      [ -z "${MFG_REV}" ] ; then
     log_msg "mfg: bin: skip mfg since one or more of the following are unspecified:"
     log_msg "MFG_OOB_MAC, MFG_OPN, MFG_SKU, MFG_MODL, MFG_SN, MFG_UUID, MFG_REV"
+
   elif [ ${mfg_sysfs_cfg_done} -eq 0 ]; then
     #
     # MFG Layout (1x 256B)
@@ -340,7 +341,7 @@ mfg_cfg_to_bin()
       fi
     fi
 
-  elif [ ${mfg_sysfs_cfg_done} -eq 0 ]; then
+  elif [ ${mfg_sysfs_cfg_done} -eq 1 ]; then
     log_msg "mfg: bin: skip mfg since configured via sysfs"
   fi
 
@@ -697,6 +698,10 @@ misc_cfg()
 part_info()
 {
   local disk part value
+
+  # Source the configuration if exists.
+  # shellcheck source=/dev/null
+  [ -e "${cfg_file}" ] && . ${cfg_file}
 
   for disk in {0..15}; do
     eval "disk_name=\${DISK${disk}_NAME}"
@@ -1171,33 +1176,91 @@ sb_cfg()
   fi
 }
 
-usage()
+# Convert input configuration to a binary file. As of
+# now only MFG configuration is converted.
+#
+# Note 1: MFG dependencies such as system attributes
+#         and Redfish settings are not supported.
+#
+# Note 2: This function can be enhanced to support
+#         additional configuration.
+#
+# When 'bfcfg' cannot be executed from Arm operating
+# system, an alternative is to run the command on external
+# host to convert the config to a binary file. This binary
+# file can be used to create a capsule that is appended to
+# a BFB file and applied from external host.
+cfg2bin()
 {
-  echo "syntax: bfcfg [--help|-h] [--dump|-d] [--part-info|-p]"
+  local cfg_file=$1
+  local bin_file=${cfg_file}.bin
+  local tmp_bin_file=/tmp/.bfcfg-mfg.bin
+
+  # Source the configuration if exists.
+  if [ -e "${cfg_file}" ]; then
+    . ${cfg_file}
+  else
+    echo "error: missing configuration file."
+    return
+  fi
+
+  # Reset variables
+  mfg_sysfs_cfg_done=0
+  has_redfish_cfg=0
+  has_sys_cfg=0
+
+  start_log_file
+
+  # Export config to bin
+  mfg_cfg_to_bin ${tmp_bin_file}
+  has_bin=0
+
+  [ -f "${tmp_bin_file}" ] && has_bin=1
+
+  if [ ${has_bin} -eq 1 ]; then
+    mv ${tmp_bin_file} ${bin_file}
+    rm -f ${tmp_bin_file}
+    echo ""
+    echo "$0: configuration blob written to ${bin_file}"
+  else
+    echo "error: failed to write configuration."
+    return
+  fi
 }
 
-# Source the configuration if exists.
-# shellcheck source=/dev/null
-[ -e "${cfg_file}" ] && . ${cfg_file}
+start_log_file()
+{
+  rm -f ${log_file} >/dev/null
+  log_msg "bfcfg (ver ${bfcfg_version})"
+  log_msg "$(date)"
+  log_msg
+}
+
+usage()
+{
+  echo "syntax: bfcfg [--help|-h] [--dump|-d] [--part-info|-p] [--cfg2bin|-c <cfg_file>]"
+}
 
 # Parse the arguments.
-options=$(getopt -n bfcfg -o dhp -l dump,help,part-info -- "$@")
+options=$(getopt -n bfcfg -o dhpc: -l dump,help,part-info,cfg2bin: -- "$@")
 eval set -- "$options"
 while [ "$1" != -- ]; do
   case $1 in
     --dump|-d) dump_mode=1 ;;
     --help|-h) usage; exit 0 ;;
     --part-info|-p) part_info; exit 0 ;;
+    --cfg2bin|-c) cfg2bin $2; exit 0 ;;
   esac
   shift
 done
 shift
 
+# Source the configuration if exists.
+# shellcheck source=/dev/null
+[ -e "${cfg_file}" ] && . ${cfg_file}
+
 # Start a new log file.
-rm -f ${log_file} >/dev/null
-log_msg "bfcfg (ver ${bfcfg_version})"
-log_msg "$(date)"
-log_msg
+start_log_file
 
 # Mount the efi variables.
 test "$(ls -A ${efivars})" || mount -t efivarfs none ${efivars}
