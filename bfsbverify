@@ -114,7 +114,7 @@ version=1
 skip_cot_verify=
 device=
 
-PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o h,k:,b:,s,v:,d: \
+PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o hk:b:sv:d: \
                 -l help,rotpk:,bfb:,skip-cot,version:,dev: -- "$@")
 eval set -- "$PARSED_OPTIONS"
 
