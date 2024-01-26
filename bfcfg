@@ -932,7 +932,7 @@ boot_cfg()
   local tmp_vlan_file=${tmp_dir}/vlan
   local value tmp_entry old_boot_order
   local l4proto l4proto_len
-  local oob_mac_addr num
+  local oob_mac_addr num oob_vlan_path
 
   [ $dump_mode -eq 1 ] && return
 
@@ -1144,7 +1144,9 @@ boot_cfg()
   done
 
   if [ -n "$oob_mac_addr" ]; then
-    printf "\\x07\\x00\\x00\\x00\\xc8\\x0f" > ${efivars}/${oob_mac_addr}-9e23d768-d2f3-4366-9fc3-3a7aba864374
+    oob_vlan_path=${efivars}/${oob_mac_addr}-9e23d768-d2f3-4366-9fc3-3a7aba864374
+    [ -e ${oob_vlan_path} ] && chattr -i ${oob_vlan_path}
+    printf "\\x07\\x00\\x00\\x00\\xc8\\x0f" > ${oob_vlan_path}
   fi
 
   efibootmgr -o "${boot_order}" >/dev/null
