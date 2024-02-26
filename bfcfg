@@ -32,7 +32,7 @@ true
 
 ${BFDBG}
 
-bfcfg_version=2.2
+bfcfg_version=3.0
 bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
@@ -469,12 +469,32 @@ mfg_cap_cfg()
 
 mfg_cfg()
 {
-  local opn_sysfs=${mfg_sysfs_dir}/opn
-  local sku_sysfs=${mfg_sysfs_dir}/sku
-  local modl_sysfs=${mfg_sysfs_dir}/modl
-  local sn_sysfs=${mfg_sysfs_dir}/sn
-  local uuid_sysfs=${mfg_sysfs_dir}/uuid
-  local rev_sysfs=${mfg_sysfs_dir}/rev
+  # Update the MFG fields with corresponding EFI variables
+  local oob_mac=${efivars}/BfCfgOobMac-${efi_bfcfg_var_guid}
+  local opn_sysfs=${efivars}/BfCfgOpn-${efi_bfcfg_var_guid}
+  local sku_sysfs=${efivars}/BfCfgSku-${efi_bfcfg_var_guid}
+  local modl_sysfs=${efivars}/BfCfgModl-${efi_bfcfg_var_guid}
+  local sn_sysfs=${efivars}/BfCfgSn-${efi_bfcfg_var_guid}
+  local uuid_sysfs=${efivars}/BfCfgUuid-${efi_bfcfg_var_guid}
+  local rev_sysfs=${efivars}/BfCfgRev-${efi_bfcfg_var_guid}
+
+  if [ -z "${oob_mac}" ] || [ -z "${opn_sysfs}" ] || [ -z "${sku_sysfs}" ] ||
+     [ -z "${modl_sysfs}" ] || [ -z "${sn_sysfs}" ] || [ -z "${uuid_sysfs}" ] ||
+     [ -z "${rev_sysfs}" ] ; then
+    #
+    # One or more EFI variables representing MFG fields are empty
+    # Use the sysfs version of MFG fields
+    #
+    oob_mac=${mfg_sysfs_dir}/oob_mac
+    opn_sysfs=${mfg_sysfs_dir}/opn
+    sku_sysfs=${mfg_sysfs_dir}/sku
+    modl_sysfs=${mfg_sysfs_dir}/modl
+    sn_sysfs=${mfg_sysfs_dir}/sn
+    uuid_sysfs=${mfg_sysfs_dir}/uuid
+    rev_sysfs=${mfg_sysfs_dir}/rev
+  fi
+
+  # Use the EFI variable for all extended MFG fields
   local sys_mfr_sysfs=${efivars}/BfCfgSysMfr-${efi_bfcfg_var_guid}
   local sys_pdn_sysfs=${efivars}/BfCfgSysPdn-${efi_bfcfg_var_guid}
   local sys_ver_sysfs=${efivars}/BfCfgSysVer-${efi_bfcfg_var_guid}
@@ -484,13 +504,13 @@ mfg_cfg()
   local bsb_sn_sysfs=${efivars}/BfCfgBsbSn-${efi_bfcfg_var_guid}
 
   if [ $dump_mode -eq 1 ]; then
-    [ -e "${oob_mac_sysfs}" ] && echo "mfg: MFG_OOB_MAC=$(cat ${oob_mac_sysfs} 2>/dev/null)"
-    [ -e "${opn_sysfs}" ] && echo "mfg: MFG_OPN=$(cat ${opn_sysfs} 2>/dev/null)"
-    [ -e "${sku_sysfs}" ] && echo "mfg: MFG_SKU=$(cat ${sku_sysfs} 2>/dev/null)"
-    [ -e "${modl_sysfs}" ] && echo "mfg: MFG_MODL=$(cat ${modl_sysfs} 2>/dev/null)"
-    [ -e "${sn_sysfs}" ] && echo "mfg: MFG_SN=$(cat ${sn_sysfs} 2>/dev/null)"
-    [ -e "${uuid_sysfs}" ] && echo "mfg: MFG_UUID=$(cat ${uuid_sysfs} 2>/dev/null)"
-    [ -e "${rev_sysfs}" ] && echo "mfg: MFG_REV=$(cat ${rev_sysfs} 2>/dev/null)"
+    [ -e "${oob_mac}" ] && echo "mfg: MFG_OOB_MAC=$(tr -d '\0' < ${oob_mac} 2>/dev/null)"
+    [ -e "${opn_sysfs}" ] && echo "mfg: MFG_OPN=$(tr -d '\0' < ${opn_sysfs} 2>/dev/null)"
+    [ -e "${sku_sysfs}" ] && echo "mfg: MFG_SKU=$(tr -d '\0' < ${sku_sysfs} 2>/dev/null)"
+    [ -e "${modl_sysfs}" ] && echo "mfg: MFG_MODL=$(tr -d '\0' < ${modl_sysfs} 2>/dev/null)"
+    [ -e "${sn_sysfs}" ] && echo "mfg: MFG_SN=$(tr -d '\0' < ${sn_sysfs} 2>/dev/null)"
+    [ -e "${uuid_sysfs}" ] && echo "mfg: MFG_UUID=$(tr -d '\0' < ${uuid_sysfs} 2>/dev/null)"
+    [ -e "${rev_sysfs}" ] && echo "mfg: MFG_REV=$(tr -d '\0' < ${rev_sysfs} 2>/dev/null)"
     [ -e "${sys_mfr_sysfs}" ] && echo "mfg: MFG_SYS_MFR=$(tr -d '\0' < ${sys_mfr_sysfs} 2>/dev/null)"
     [ -e "${sys_pdn_sysfs}" ] && echo "mfg: MFG_SYS_PDN=$(tr -d '\0' < ${sys_pdn_sysfs} 2>/dev/null)"
     [ -e "${sys_ver_sysfs}" ] && echo "mfg: MFG_SYS_VER=$(tr -d '\0' < ${sys_ver_sysfs} 2>/dev/null)"
