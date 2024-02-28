@@ -32,7 +32,7 @@ true
 
 ${BFDBG}
 
-bfcfg_version=3.0
+bfcfg_version=3.1
 bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
@@ -237,7 +237,7 @@ mfg_cfg_set_bytes()
 
   if [ -n "${value}" ] && [ -f "${out_file}" ]; then
     # Most of the fields are of type strings, thus check the number
-    # of charcters per string. Only exception for the OOB MAC.
+    # of characters per string. Only exception for the OOB MAC.
     # The OOB MAC is stored in hex format; e.g., \xAA\xBB\xCC\xDD\xEE\xFF,
     # total of 24 charcters
     if [ ${#value} -gt ${size} ] && [ "${name}" != "MFG_OOB_MAC" ]; then
@@ -284,6 +284,49 @@ copy_efi_var_data()
   fi
 }
 
+mfg_cfg_set_bf_modes()
+{
+  local out_file=$1
+  local name=$2
+  local offset=$3
+  local size=$4
+  local value=$5
+  local bin_value
+
+  [ ${dump_mode} -eq 1 ] && return
+
+  if [ -z "${value}" ] || [ ! -f "${out_file}" ]; then
+    return
+  fi
+
+  #
+  # This must be consistent with the UEFI PMI library
+  # implementation.
+  #
+  if [ "${name}" == "MFG_PLAT_MODE" ]; then
+    if [ "${value^^}" == "DPU" ]; then
+      bin_value='\x01'
+    elif [ "${value^^}" == "NIC" ]; then
+      bin_value='\x02'
+    else
+      log_msg "mfg: ${name}, unsupported value ${value}"
+      return
+    fi
+    printf "${bin_value}" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+    err=$?
+    if [ ${err} -eq 0 ]; then
+      log_msg "mfg: ${name}=${value}"
+    else
+      log_msg "mfg: modl_err=${err}"
+      return
+    fi
+    has_cfg=1
+  else
+    log_msg "mfg: ${name} is not supported"
+    return
+  fi
+}
+
 mfg_cfg_to_bin()
 {
   local bin_file=$1
@@ -297,7 +340,8 @@ mfg_cfg_to_bin()
   #   MFG Extension (off: 256, len:2048 bytes)
   #   SYS Config    (off:2304, len:  64 bytes)
   #   RDF Config    (off:2368, len:  32 bytes)
-  #   Reserved      (off:2400, len:1696 bytes)
+  #   BF Modes      (off:2400, len:   4 bytes)
+  #   Reserved      (off:2404, len:1692 bytes)
   #
   dd if=/dev/zero of=${bin_file} count=16 bs=256
   has_cfg=0
@@ -370,6 +414,19 @@ mfg_cfg_to_bin()
     mfg_cfg_set_bytes ${bin_file} "MFG_BSB_PDN" 840 24 "${MFG_BSB_PDN}"
     mfg_cfg_set_bytes ${bin_file} "MFG_BSB_VER" 864 24 "${MFG_BSB_VER}"
     mfg_cfg_set_bytes ${bin_file} "MFG_BSB_SN" 888 24 "${MFG_BSB_SN}"
+  fi
+
+  if [ -n "${MFG_PLAT_MODE}" ]; then
+    #
+    # BF Modes (4 Bytes)
+    #
+    # SYS_IN_CPU_MODEL   (off: 2400, len:1 byte)
+    # MFG_HOST_PRIV_MODE (off: 2401, len:1 byte)
+    # MFG_PLAT_MODE      (off: 2402, len:1 byte)
+    #
+    # For now, support platform mode only. If needed enhance it
+    # to support 'Internal CPU Model' and 'Host Privilege Level'.
+    mfg_cfg_set_bf_modes ${bin_file} "MFG_PLAT_MODE" 2402 1 "${MFG_PLAT_MODE}"
   fi
 
   if [ ${has_cfg} -eq 0 ]; then
@@ -1216,7 +1273,7 @@ sb_cfg()
 cfg2bin()
 {
   local cfg_file=$1
-  local bin_file=${cfg_file}.bin
+  local bin_file=$(basename $1).bin
   local tmp_bin_file=/tmp/.bfcfg-mfg.bin
 
   # Source the configuration if exists.
