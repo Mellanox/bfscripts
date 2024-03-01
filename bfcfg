@@ -40,6 +40,7 @@ dump_mode=0
 
 mlxmkcap=/lib/firmware/mellanox/boot/capsule/scripts/mlx-mkcap
 
+bfcf_acpi_table=/sys/firmware/acpi/tables/BFCF
 efivars=/sys/firmware/efi/efivars
 sys_cfg_sysfs=${efivars}/BfSysCfg-9c759c02-e5a3-45e4-acfc-c34a500628a6
 redfish_cfg_sysfs=${efivars}/BfRedfish-ce3e5882-6770-4d5e-aa45-90f909da2446
@@ -1258,17 +1259,62 @@ start_log_file()
   log_msg
 }
 
+get_osarg_len() {
+  local i=0
+  local len=0
+  local bits=8
+  local osarg_len_offset=45
+  local osarg_len_byte_size=4
+
+  # Length of OsArgs is present in the ACPI table at a fixed offset.
+  # Length information is UINT32 and hence spread over 4-bytes.
+  # Read each byte and shift by 8X times and add them together.
+
+  tail -c+$osarg_len_offset ${bfcf_acpi_table} | hexdump -v -e '/1 "%u\n"' | while read Char; do
+    shiftval=$(expr $bits \* $i)
+    newval=$(($Char<<$shiftval))
+    len=$(expr $len + $newval)
+    i=$(expr $i + 1)
+    if [ $i -eq $osarg_len_byte_size ]; then
+      echo $len
+      break
+    fi
+  done
+}
+
+print_osarg()
+{
+  if [ ! -e ${bfcf_acpi_table} ]; then
+    return
+  fi
+
+  local osarg_len=$(get_osarg_len)
+  #
+  # ACPI table headers are fixed, so OsArgs always starts from
+  # a fixed offset.
+  #
+  local osarg_offset=49
+
+  if [[ ${osarg_len} -ne 0 ]]; then
+    tail -c+$osarg_offset ${bfcf_acpi_table} | head -c$osarg_len | hexdump -v -e '/1 "%c\n"' | while read Char; do
+      printf "%c" $Char
+    done
+    printf "\n"
+  fi
+}
+
 usage()
 {
-  echo "syntax: bfcfg [--help|-h] [--dump|-d] [--part-info|-p] [--cfg2bin|-c <cfg_file>]"
+  echo "syntax: bfcfg [--help|-h] [--dump|-d] [--dump-osarg|o] [--part-info|-p] [--cfg2bin|-c <cfg_file>]"
 }
 
 # Parse the arguments.
-options=$(getopt -n bfcfg -o dhpc: -l dump,help,part-info,cfg2bin: -- "$@")
+options=$(getopt -n bfcfg -o dohpc: -l dump,dump-osarg,help,part-info,cfg2bin: -- "$@")
 eval set -- "$options"
 while [ "$1" != -- ]; do
   case $1 in
     --dump|-d) dump_mode=1 ;;
+    --dump-osarg|o) print_osarg; exit 0;;
     --help|-h) usage; exit 0 ;;
     --part-info|-p) part_info; exit 0 ;;
     --cfg2bin|-c) cfg2bin $2; exit 0 ;;
