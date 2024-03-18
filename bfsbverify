@@ -65,7 +65,7 @@ scratch=${SCRATCH_PATH:-/tmp}
 tmpdir=$(mktemp -d $scratch/bfbtmp-${USER}.XXXXXXXXXXXX)
 # Trap to delete the temorary folder upon the specified
 # signal is caught.
-trap "rm -rf $tmpdir" SIGHUP SIGINT SIGQUIT SIGABRT SIGTERM SIGKILL SIGSTOP
+trap "rm -rf $tmpdir" HUP INT QUIT ABRT TERM KILL STOP
 
 
 ##############################################################################
