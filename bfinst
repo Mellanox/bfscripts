@@ -37,6 +37,8 @@ EOF
 
 ECHO=${ECHO:-echo}
 
+${ECHO} "WARNING: This script is no longer supported and will eventually be removed."
+
 PARSED_OPTIONS=$(getopt -n "$0" -o h \
     --long "help unloadmods minifs fullfs fmtpersist persistcfg skip-boot-update" -- "$@")
 

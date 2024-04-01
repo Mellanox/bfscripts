@@ -37,6 +37,8 @@ set -e
 # in IB mode.
 #
 
+echo "WARNING: This script is no longer supported and will eventually be removed."
+
 PROGNAME=$(basename "$0")
 # Check arguments. For now, only output initramfs image is expected.
 # if the output image argument is ommitted, then the default location

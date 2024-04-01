@@ -29,6 +29,8 @@
 
 # This feature is supported only on OCP 3.0 cards
 
+echo "WARNING: This script is no longer supported and will eventually be removed."
+
 usage()
 {
   cat <<EOF
