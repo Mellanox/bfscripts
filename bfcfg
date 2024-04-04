@@ -536,6 +536,11 @@ mfg_cfg()
   local uuid_sysfs=${efivars}/BfCfgUuid-${efi_bfcfg_var_guid}
   local rev_sysfs=${efivars}/BfCfgRev-${efi_bfcfg_var_guid}
 
+  # The efi variables have a 4 byte attribute header we won't display.
+  # If we fetch the data from the MFG, that header does not exist.
+  local skip_bytes_mfg=4
+  local skip_bytes_ext_mfg=4
+
   if [ -z "${oob_mac}" ] || [ -z "${opn_sysfs}" ] || [ -z "${sku_sysfs}" ] ||
      [ -z "${modl_sysfs}" ] || [ -z "${sn_sysfs}" ] || [ -z "${uuid_sysfs}" ] ||
      [ -z "${rev_sysfs}" ] ; then
@@ -550,6 +555,7 @@ mfg_cfg()
     sn_sysfs=${mfg_sysfs_dir}/sn
     uuid_sysfs=${mfg_sysfs_dir}/uuid
     rev_sysfs=${mfg_sysfs_dir}/rev
+    skip_bytes_mfg=0
   fi
 
   # Use the EFI variable for all extended MFG fields
@@ -562,20 +568,20 @@ mfg_cfg()
   local bsb_sn_sysfs=${efivars}/BfCfgBsbSn-${efi_bfcfg_var_guid}
 
   if [ $dump_mode -eq 1 ]; then
-    [ -e "${oob_mac}" ] && echo "mfg: MFG_OOB_MAC=$(tr -d '\0' < ${oob_mac} 2>/dev/null)"
-    [ -e "${opn_sysfs}" ] && echo "mfg: MFG_OPN=$(tr -d '\0' < ${opn_sysfs} 2>/dev/null)"
-    [ -e "${sku_sysfs}" ] && echo "mfg: MFG_SKU=$(tr -d '\0' < ${sku_sysfs} 2>/dev/null)"
-    [ -e "${modl_sysfs}" ] && echo "mfg: MFG_MODL=$(tr -d '\0' < ${modl_sysfs} 2>/dev/null)"
-    [ -e "${sn_sysfs}" ] && echo "mfg: MFG_SN=$(tr -d '\0' < ${sn_sysfs} 2>/dev/null)"
-    [ -e "${uuid_sysfs}" ] && echo "mfg: MFG_UUID=$(tr -d '\0' < ${uuid_sysfs} 2>/dev/null)"
-    [ -e "${rev_sysfs}" ] && echo "mfg: MFG_REV=$(tr -d '\0' < ${rev_sysfs} 2>/dev/null)"
-    [ -e "${sys_mfr_sysfs}" ] && echo "mfg: MFG_SYS_MFR=$(tr -d '\0' < ${sys_mfr_sysfs} 2>/dev/null)"
-    [ -e "${sys_pdn_sysfs}" ] && echo "mfg: MFG_SYS_PDN=$(tr -d '\0' < ${sys_pdn_sysfs} 2>/dev/null)"
-    [ -e "${sys_ver_sysfs}" ] && echo "mfg: MFG_SYS_VER=$(tr -d '\0' < ${sys_ver_sysfs} 2>/dev/null)"
-    [ -e "${bsb_mfr_sysfs}" ] && echo "mfg: MFG_BSB_MFR=$(tr -d '\0' < ${bsb_mfr_sysfs} 2>/dev/null)"
-    [ -e "${bsb_pdn_sysfs}" ] && echo "mfg: MFG_BSB_PDN=$(tr -d '\0' < ${bsb_pdn_sysfs} 2>/dev/null)"
-    [ -e "${bsb_ver_sysfs}" ] && echo "mfg: MFG_BSB_VER=$(tr -d '\0' < ${bsb_ver_sysfs} 2>/dev/null)"
-    [ -e "${bsb_sn_sysfs}" ] && echo "mfg: MFG_BSB_SN=$(tr -d '\0' < ${bsb_sn_sysfs} 2>/dev/null)"
+    [ -e "${oob_mac}" ] && echo "mfg: MFG_OOB_MAC=$(cat ${oob_mac} 2>/dev/null | sed "s/^.\{$skip_bytes_mfg\}//")"
+    [ -e "${opn_sysfs}" ] && echo "mfg: MFG_OPN=$(cat ${opn_sysfs} 2>/dev/null | sed "s/^.\{$skip_bytes_mfg\}//")"
+    [ -e "${sku_sysfs}" ] && echo "mfg: MFG_SKU=$(cat ${sku_sysfs} 2>/dev/null | sed "s/^.\{$skip_bytes_mfg\}//")"
+    [ -e "${modl_sysfs}" ] && echo "mfg: MFG_MODL=$(cat ${modl_sysfs} 2>/dev/null  | sed "s/^.\{$skip_bytes_mfg\}//")"
+    [ -e "${sn_sysfs}" ] && echo "mfg: MFG_SN=$(cat ${sn_sysfs} 2>/dev/null | sed "s/^.\{$skip_bytes_mfg\}//")"
+    [ -e "${uuid_sysfs}" ] && echo "mfg: MFG_UUID=$(cat ${uuid_sysfs} 2>/dev/null | sed "s/^.\{$skip_bytes_mfg\}//")"
+    [ -e "${rev_sysfs}" ] && echo "mfg: MFG_REV=$(cat ${rev_sysfs} 2>/dev/null | sed "s/^.\{$skip_bytes_mfg\}//")"
+    [ -e "${sys_mfr_sysfs}" ] && echo "mfg: MFG_SYS_MFR=$(cat ${sys_mfr_sysfs} 2>/dev/null | sed "s/^.\{$skip_bytes_ext_mfg\}//")"
+    [ -e "${sys_pdn_sysfs}" ] && echo "mfg: MFG_SYS_PDN=$(cat ${sys_pdn_sysfs} 2>/dev/null | sed "s/^.\{$skip_bytes_ext_mfg\}//")"
+    [ -e "${sys_ver_sysfs}" ] && echo "mfg: MFG_SYS_VER=$(cat ${sys_ver_sysfs} 2>/dev/null | sed "s/^.\{$skip_bytes_ext_mfg\}//")"
+    [ -e "${bsb_mfr_sysfs}" ] && echo "mfg: MFG_BSB_MFR=$(cat ${bsb_mfr_sysfs} 2>/dev/null | sed "s/^.\{$skip_bytes_ext_mfg\}//")"
+    [ -e "${bsb_pdn_sysfs}" ] && echo "mfg: MFG_BSB_PDN=$(cat ${bsb_pdn_sysfs} 2>/dev/null | sed "s/^.\{$skip_bytes_ext_mfg\}//")"
+    [ -e "${bsb_ver_sysfs}" ] && echo "mfg: MFG_BSB_VER=$(cat ${bsb_ver_sysfs} 2>/dev/null | sed "s/^.\{$skip_bytes_ext_mfg\}//")"
+    [ -e "${bsb_sn_sysfs}" ] && echo "mfg: MFG_BSB_SN=$(cat ${bsb_sn_sysfs} 2>/dev/null | sed "s/^.\{$skip_bytes_ext_mfg\}//")"
     return
   fi
 
