@@ -80,6 +80,7 @@ elif [ "$bfversion" = $BF3_PLATFORM_ID ]; then
 	["Moonraker"]="(900-9D3(B|C)|SN37B36732|SN37B75411|8217991|P66102)"
 	["Goldeneye"]="(900-9D3D|P66584)"
 	["Roy"]="699-21014-0230"
+	["Zhora"]="800-11012-0000-000"
     )
     PART_NUMBER=$(lspci -s "$(bfhcafw bus)" -vv | grep PN)
 
