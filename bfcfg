@@ -49,6 +49,7 @@ efi_bfcfg_var_guid=487ff588-fb71-4b19-9100-ebe067aa1af0
 efi_vlan_var_guid=9e23d768-d2f3-4366-9fc3-3a7aba864374
 rshim_efi_mac_sysfs=${efivars}/RshimMacAddr-${efi_global_var_guid}
 pxe_dhcp_class_id_sysfs=${efivars}/DhcpClassId-${efi_global_var_guid}
+bf_bundle_version_sysfs=${efivars}/BfBundleVer-${efi_bfcfg_var_guid}
 
 mfg_sysfs_dir=/sys/bus/platform/devices/MLNXBF04:00/driver
 if [ ! -e $mfg_sysfs_dir/oob_mac ]; then
@@ -749,6 +750,13 @@ misc_cfg()
       value=$(xxd -s 4 -p ${pxe_dhcp_class_id_sysfs} 2>/dev/null | xxd -r -p)
     fi
     echo "misc: PXE_DHCP_CLASS_ID=${value}"
+
+    # BF bundle version.
+    value=""
+    if [ -f "${bf_bundle_version_sysfs}" ]; then
+      value=$(xxd -s 4 -p ${bf_bundle_version_sysfs} 2>/dev/null | xxd -r -p)
+    fi
+    echo "misc: BF_BUNDLE_VERSION=${value}"
   else
     # Rshim MAC address.
     if [ -n "${NET_RSHIM_MAC}" ]; then
@@ -771,6 +779,18 @@ misc_cfg()
       cp ${tmp_file} ${pxe_dhcp_class_id_sysfs}
       rm -f ${tmp_file}
       log_msg "misc: PXE_DHCP_CLASS_ID=${PXE_DHCP_CLASS_ID}"
+    fi
+
+    # BF bundle version.
+    if [ -n "${BF_BUNDLE_VERSION}" ]; then
+      value="\\x07\\x00\\x00\\x00${BF_BUNDLE_VERSION}"
+      printf "${value}" > ${tmp_file}
+      if [ -f "${bf_bundle_version_sysfs}" ]; then
+        chattr -i ${bf_bundle_version_sysfs}
+      fi
+      cp ${tmp_file} ${bf_bundle_version_sysfs}
+      rm -f ${tmp_file}
+      log_msg "misc: BF_BUNDLE_VERSION=${BF_BUNDLE_VERSION}"
     fi
   fi
 }
