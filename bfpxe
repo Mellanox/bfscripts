@@ -95,8 +95,17 @@ EOF
       fi
     fi
 
-    # IP address
-    if [ "$ifaddr" = "dhcp" ]; then
+    # IPv6 address
+    if [ "$ifaddr" = "dhcp6" ]; then
+      if [ -x /sbin/dhclient ]; then
+        /sbin/dhclient -6 "$ifname"
+      fi
+      if [ -n "$TMP_MNT" ]; then
+        sed -i '/Address =/d' "$TMP_MNT"/etc/systemd/network/05-"${ifname}".network
+        echo "DHCP = ipv6" >> "$TMP_MNT"/etc/systemd/network/05-"${ifname}".network
+      fi
+    # IPv4 address
+    elif [ "$ifaddr" = "dhcp" ]; then
       ifconfig "$ifname" 0.0.0.0 up
       if [ -x /sbin/dhclient ]; then
         /sbin/dhclient "$ifname"
