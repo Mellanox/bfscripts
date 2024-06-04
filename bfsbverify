@@ -835,7 +835,7 @@ else
         $ddrcert \
         $ddratedmem
     
-    if [ "$version" = "2" ]; then
+    if [ "$version" = "2" ] && [ -f "$ddr5snps" ]; then
         # Verify Ddr5SnpsHash
         # The Ddr5SnpsHash is expected in
         # certificate extension.
