@@ -32,7 +32,7 @@ true
 
 ${BFDBG}
 
-bfcfg_version=3.1
+bfcfg_version=3.2
 bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
@@ -567,8 +567,13 @@ mfg_cfg()
   local bsb_ver_sysfs=${efivars}/BfCfgBsbVer-${efi_bfcfg_var_guid}
   local bsb_sn_sysfs=${efivars}/BfCfgBsbSn-${efi_bfcfg_var_guid}
 
+
+
   if [ $dump_mode -eq 1 ]; then
-    [ -e "${oob_mac}" ] && echo "mfg: MFG_OOB_MAC=$(cat ${oob_mac} 2>/dev/null | sed "s/^.\{$skip_bytes_mfg\}//")"
+    # W/A: always read the OOB MAC from kernel sysfs.
+    # Note: The 'BfCfgOobMac' EFI variable might contain incorrect
+    #       OOB MAC.
+    [ -e "${oob_mac_sysfs}" ] && echo "mfg: MFG_OOB_MAC=$(cat ${oob_mac_sysfs} 2>/dev/null)"
     [ -e "${opn_sysfs}" ] && echo "mfg: MFG_OPN=$(cat ${opn_sysfs} 2>/dev/null | sed "s/^.\{$skip_bytes_mfg\}//")"
     [ -e "${sku_sysfs}" ] && echo "mfg: MFG_SKU=$(cat ${sku_sysfs} 2>/dev/null | sed "s/^.\{$skip_bytes_mfg\}//")"
     [ -e "${modl_sysfs}" ] && echo "mfg: MFG_MODL=$(cat ${modl_sysfs} 2>/dev/null  | sed "s/^.\{$skip_bytes_mfg\}//")"
