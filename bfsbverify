@@ -62,8 +62,10 @@ mlxbfbootctl=${BFBOOTCTL_PATH:-mlxbf-bootctl}
 debug=${DEBUG_ENABLE:-}
 
 scratch=${SCRATCH_PATH:-/tmp}
-# Indirection to protect against "rm -fr /" mistakes.
-tmpdir=$scratch/bfbtmp
+tmpdir=$(mktemp -d $scratch/bfbtmp-${USER}.XXXXXXXXXXXX)
+# Trap to delete the temorary folder upon the specified
+# signal is caught.
+trap "rm -rf $tmpdir" HUP INT QUIT ABRT TERM KILL STOP
 
 
 ##############################################################################
@@ -114,7 +116,7 @@ version=1
 skip_cot_verify=
 device=
 
-PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o h,k:,b:,s,v:,d: \
+PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o hk:b:sv:d: \
                 -l help,rotpk:,bfb:,skip-cot,version:,dev: -- "$@")
 eval set -- "$PARSED_OPTIONS"
 
@@ -833,7 +835,7 @@ else
         $ddrcert \
         $ddratedmem
     
-    if [ "$version" = "2" ]; then
+    if [ "$version" = "2" ] && [ -f "$ddr5snps" ]; then
         # Verify Ddr5SnpsHash
         # The Ddr5SnpsHash is expected in
         # certificate extension.

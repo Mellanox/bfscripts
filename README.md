@@ -15,12 +15,14 @@ Overview of each file:
 - **bfhcafw** Utilities for managing ConnectX interfaces on BlueField.
 - **bfinst** Simple installation script for both the bootloader and a root file
   system.
+- **bfperf_pmc** Tool for collecting memory statistics..
 - **bfpxe** PXE boot helper script.
 - **bfrec** Force update of the bootloader only.
 - **bfrshlog** Write message into the rshim logging buffer.
 - **bfsbdump** Dump secure boot status information.
 - **bfsbkeys** Dump all public keys in ATF.
 - **bfsbverify** Read BFB file from file or device and verify RoTPK and CoT.
+- **bftraining_results** Read DDR5 training parameters from ACPI.
 - **bfver** Print ATF, UEFI and rootfs versions.
 - **bfvcheck** Check whether software versions installed match those in current release.
 - **bfvcheck.service** Companion service to bfvcheck, runs bfvcheck at boot time.

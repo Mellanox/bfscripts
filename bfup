@@ -28,6 +28,7 @@
 # either expressed or implied, of the FreeBSD Project.
 
 /usr/bin/bfrshlog "Linux up"
+/usr/bin/bfrshlog "DPU is ready"
 
 os_up_path="/sys/devices/platform/MLNXBF04:00/driver/os_up"
 if [ ! -e "${os_up_path}" ]; then

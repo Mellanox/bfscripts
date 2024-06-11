@@ -78,27 +78,51 @@ RUNTIME_ATF=$( echo "$bfver_out" | grep -m 1 "ATF" | cut -d':' -f 2,3 | \
 RUNTIME_UEFI=$( echo "$bfver_out" | grep -m 1 "UEFI" | cut -d':' -f 2 | \
     sed -e 's/[[:space:]]//' )
 
-mlxfw_out=$( $mlxfw --query ) && MLXFW_SUCCESS=0 || MLXFW_SUCCESS=1
 
 FW_UPDATED=no
-
-if [ $MLXFW_SUCCESS -eq 0 ]; then
-    # awk is used here to ease dealing with the spaces used in mlxfwmanager
-    # output, and to make sure we pick the right FW line
-    FIRMWARE_VERSIONS=$( echo "$mlxfw_out" | awk '($1 == "FW") && ($2 != "(Running)") { print $2 "," $3 }' )
-
-    BUILD_FW=$( echo "$FIRMWARE_VERSIONS" | cut -d',' -f 2 )
-    RUNTIME_FW=$( echo "$FIRMWARE_VERSIONS" |  cut -d',' -f 1 )
-
-    # If FW (Running) line exists, user updated firmware, but did
-    # not power cycle, so output message further down
-    if echo "\"$mlxfw_out\"" | grep -q 'FW *(Running)' >/dev/null; then
+mlxfw_out=""
+MLXFW_SUCCESS=1
+if [ -d /sys/module/mstflint_access ]; then
+    # Use mst to access CX FW version
+    cx_pcidev=$(lspci -nD 2> /dev/null | grep 15b3:a2d[26c] | awk '{print $1}' | head -1)
+    PSID=$(mstflint -d $cx_pcidev q 2>&1 | grep -w "PSID:" | awk '{print $NF}')
+    LOADED_FW=$(mstflint -d $cx_pcidev q 2>&1 | grep -w 'FW Version:' | awk '{print $NF}')
+    RUNTIME_FW=$(mstflint -d $cx_pcidev q 2>&1 | grep -w 'FW Version(Running):' | awk '{print $NF}')
+    if [ -z "$RUNTIME_FW" ]; then
+        RUNTIME_FW=$LOADED_FW
+    fi
+    BUILD_FW=$( $mlxfw --list | grep -w ${PSID} | awk '{print $4}' )
+    if [ -z "$BUILD_FW" ]; then
+        BUILD_FW="ERROR"
+        err "There was an error detecting the firmware version."
+    fi
+    if [ "$LOADED_FW" != "$RUNTIME_FW" ]; then
         FW_UPDATED=yes
     fi
 else
-    err "There was an error detecting the firmware version."
-    BUILD_FW=ERROR
-    RUNTIME_FW=
+    mlxfw_out=$( $mlxfw --query ) && MLXFW_SUCCESS=0 || MLXFW_SUCCESS=1
+
+    if [ $MLXFW_SUCCESS -eq 0 ]; then
+        # awk is used here to ease dealing with the spaces used in mlxfwmanager
+        # output, and to make sure we pick the right FW line
+        FIRMWARE_VERSIONS=$( echo "$mlxfw_out" | awk '($1 == "FW") && ($2 != "(Running)") { print $2 "," $3 }' )
+
+        BUILD_FW=$( echo "$FIRMWARE_VERSIONS" | cut -d',' -f 2 )
+        RUNTIME_FW=$( echo "$FIRMWARE_VERSIONS" |  cut -d',' -f 1 )
+        LOADED_FW=$RUNTIME_FW
+
+        # If FW (Running) line exists, user updated firmware, but did
+        # not power cycle, so output message further down
+        if echo "\"$mlxfw_out\"" | grep -q 'FW *(Running)' >/dev/null; then
+            FIRMWARE_VERSIONS=$( echo "$mlxfw_out" | awk '($1 == "FW") && ($2 == "(Running)") { print $3 "," $4 }' )
+            RUNTIME_FW=$( echo "$FIRMWARE_VERSIONS" |  cut -d',' -f 1 )
+            FW_UPDATED=yes
+        fi
+    else
+        err "There was an error detecting the firmware version."
+        BUILD_FW=ERROR
+        RUNTIME_FW=
+    fi
 fi
 
 echo ""
@@ -139,15 +163,15 @@ fi
 
 if [ "$FW_UPDATED" = "yes" ]; then
     cat << EOF
-WARNING: The firmware has been updated, but the chassis must be
-power cycled for changes to take effect.
+WARNING: The firmware has been updated to $LOADED_FW, but the chassis
+must be power cycled for changes to take effect.
 
 EOF
 fi
 
 echo "Version check complete."
 
-if [ -z "$version_error" ]; then
+if [ -z "$version_error" ]  && [ $FW_UPDATED = "no" ]; then
     echo "No issues found."
     exit 0
 fi

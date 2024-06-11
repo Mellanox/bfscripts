@@ -245,14 +245,8 @@ verify_bfb_signature()
     in_bfb=$1
     in_ver=$2
 
-    if [ ! "$(which openssl 2>/dev/null)" ]; then
-        echo "cannot find \"openssl\" command!"
-        echo "skip BFB signature verification"
-        return 0
-    fi
-
-    if [ ! "$(which python3 2>/dev/null)" ]; then
-        echo "cannot find \"python3\" command!"
+    if [ ! "$(which python3 2>/dev/null)" ] ||
+            [ ! "$(which openssl 2>/dev/null)" ]; then
         echo "skip BFB signature verification"
         return 0
     fi
@@ -321,7 +315,7 @@ kernel_bootctl_update()
             verify_bfb_signature $bfb_file 2
         fi
     else
-        echo "cannot find acpi tables!"
+        echo "warning: cannot find acpi tables!"
         echo "skip BFB signature verification"
     fi
 

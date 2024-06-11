@@ -64,6 +64,8 @@ install -p bfinst            %{installdir}
 install -p man/bfinst.8      %{man8dir}
 install -p bfpxe             %{installdir}
 install -p man/bfpxe.8       %{man8dir}
+install -p bfperf_pmc    %{installdir}
+install -p man/bfperf_pmc.8 %{man8dir}
 install -p bfrec             %{installdir}
 install -p man/bfrec.8       %{man8dir}
 install -p bfrshlog          %{installdir}
@@ -86,9 +88,10 @@ install -p bfhcafw           %{installdir}
 install -p man/bfhcafw.8     %{man8dir}
 install -p bfup              %{installdir}
 install -p man/bfup.8        %{man8dir}
-
 install -p mlx-mkbfb       %{installdir}
 install -p man/mlx-mkbfb.1 %{man1dir}
+install -p bftraining_results %{installdir}
+install -p man/bftraining_results.8 %{man8dir}
 
 install -p -d %{buildroot}%{_unitdir}
 install -p bfvcheck.service %{buildroot}%{_unitdir}/
