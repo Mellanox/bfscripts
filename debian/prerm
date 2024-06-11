@@ -9,9 +9,11 @@ fi
 if which deb-systemd-helper >/dev/null 2>/dev/null; then
 	if [ -z "$D" ]; then
 		deb-systemd-helper stop bfvcheck.service
+		deb-systemd-helper stop bfup.service
 	fi
 
 	deb-systemd-helper "$OPTS" disable bfvcheck.service
+	deb-systemd-helper "$OPTS" disable bfup.service
 fi
 
 #DEBHELPER#

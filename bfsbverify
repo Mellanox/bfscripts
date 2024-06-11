@@ -1,0 +1,1065 @@
+#! /bin/sh
+
+# Copyright (c) 2022 NVIDIA Corporation.  All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# The views and conclusions contained in the software and documentation are those
+# of the authors and should not be interpreted as representing official policies,
+# either expressed or implied, of the FreeBSD Project.
+
+set -e
+
+##############################################################################
+##############################################################################
+##
+## Script parameters
+##
+##############################################################################
+##############################################################################
+
+##
+## This script requires a standard shell/bash environment with
+## 'openssl', 'mlx-mkbfb', 'mlxbf-bootctl' and other basic shell
+## commands.
+##
+## This script might also rely on environement variables to be setup
+## prior to the execution of the script:
+##
+##     env [VARIABLE0=VALUE] [VARIABLE1=VALUE] ... <script> <params>
+##
+## Environement Variables:
+##
+##    MKBFB_PATH        Path to the mlx-mkbfb command.
+##    BFBOOTCTL_PATH    Path to the mlxbf-bootctl command.
+##    SCRATCH_PATH      Path to temporary scratch directory.
+##	  DEBUG_ENABLE		If set to 1, debug prints are enabled.
+##
+
+# Default tools setup
+mkbfb=${MKBFB_PATH:-mlx-mkbfb}
+mlxbfbootctl=${BFBOOTCTL_PATH:-mlxbf-bootctl}
+
+# Default debug setup
+debug=${DEBUG_ENABLE:-}
+
+scratch=${SCRATCH_PATH:-/tmp}
+# Indirection to protect against "rm -fr /" mistakes.
+tmpdir=$scratch/bfbtmp
+
+
+##############################################################################
+##############################################################################
+##
+## Parse script arguments
+##
+##############################################################################
+##############################################################################
+
+PROGNAME=$(basename "$0")
+
+usage()
+{
+    cat <<EOF
+
+Usage:  $PROGNAME   [-h|--help]
+                    [-k|--rotpk ROTPK]
+                    [-v|--version VERSION]
+                    [-s|--skip-cot]
+                    [-b|--bfb BFB]
+                    [-d|--dev DEV]
+
+Verify the BFB certificate chain. To learn about supported options
+run the command with '--help'.
+
+Manadatory arguments:
+    -b|--bfb                The input BFB file to verify.
+    -d|--dev                The eMMC boot partition device to verify.
+                            (e.g., /dev/mmcblk0boot0, /dev/mmcblk0boot1)
+    
+    '-b|--bfb' and '-d|--dev' cannot be combined together.
+
+Optional argument
+    -h|--help               Print help.
+    -k|--rotpk              The ROT public key in DER format.
+    -v|--version            The input BFB file target version.
+                                1: BlueField 2 file version (default)
+                                2: BlueField 3 file version.
+    -s|--skip-cot           Skip COT verification.
+
+EOF
+}
+
+rotpk=
+inbfb=
+version=1
+skip_cot_verify=
+device=
+
+PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o h,k:,b:,s,v:,d: \
+                -l help,rotpk:,bfb:,skip-cot,version:,dev: -- "$@")
+eval set -- "$PARSED_OPTIONS"
+
+while true
+do
+    case $1 in
+        -h | --help)
+          usage
+          exit 0
+          ;;
+        -b | --bfb)
+          inbfb=$(readlink -f "$2")
+          shift 2
+          ;;
+        -d | --dev)
+          device=$2
+          shift 2
+          ;;
+        -k | --rotpk)
+          rotpk=$(readlink -f "$2")
+          shift 2
+          ;;
+        -v | --version)
+          version=$2
+          shift 2
+          ;;
+        -s | --skip-cot)
+          skip_cot_verify=1
+          shift
+          ;;
+        --)
+          shift
+          break
+          ;;
+    esac
+done
+
+#
+# Verify Script Arguments
+#
+
+if [ -z "$inbfb" ] && [ -z "$device" ]; then
+    echo "** error: '-b|--bfb' or '-d|--dev' must be specified."
+    echo "Try \"help\"."
+    exit 1
+fi
+
+if [ -n "$inbfb" ] && [ -n "$device" ]; then
+    echo "** error: use either '-b|--bfb' or '-d|--dev'."
+    echo "Try \"help\"."
+    exit 1
+fi
+
+if [ -n "$inbfb" ] && [ ! -f "$inbfb" ]; then
+    echo "** error: bad argument passed with '-b|--bfb'."
+    echo "Try \"help\"."
+    exit 1
+fi
+
+if [ -n "$device" ] && [ ! -b "$device" ]; then
+    echo "** error: bad argument passed with '-d|--dev'."
+    echo "Try \"help\"."
+    exit 1
+fi
+
+if [ -n "$rotpk" ] && [ ! -f "$rotpk" ]; then
+    echo "** error: missing '--rotpk' argument."
+    echo "Try \"help\"."
+    exit 1
+fi
+
+if [ "$version" != "1" ] && [ "$version" != "2" ]; then
+    echo "** error: bad version number."
+    echo "Try \"help\"."
+    exit 1
+fi
+
+##############################################################################
+##############################################################################
+##
+## Helper routines
+##
+##############################################################################
+##############################################################################
+
+print_debug()
+{
+    if [ -n "$debug" ]; then
+        echo "$*"
+    fi 
+}
+
+compare_rotpk_dev()
+{
+    inkey=$1
+    stamp=$2
+
+    devrotpk=${tmpdir}/devrotpk.pem
+
+    rm -f $devrotpk
+
+    cat <<EOF > $devrotpk
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAxRtpk3G2AO6BJcsRv/Pc
+jHZ0lq958IQ0ca86/j+t3HHCYA6ckcEqclBD3J9TZIXGRtnkvdle+hDpp3n5LZW5
+wBIKTt4QSbhpuFq07tE8lXhH2Ba1/Hi1eqZc0Am80xYvY0lFvkWUQQxZsg/hUMLr
+G3AyD8xYSARyBh2tqZkGJefdWHptIQDMCF/cOQ2CxG0slq7E6vdFhCj/eEeHVRXT
+MczuNgNXjcyeBJ5g3LVuTwtXXD5M+uBcgeYDaZzBdYbrCOJ/cs82kE5F8Ka5d1XR
+QRSPoiwBPlKJoDwINhCdTZmii1GA6HCYqbuElJFzi6fgJpvJIiymtGE+lq6OSXEk
+86BfjGzHvMAHGyV9cW9MhLMgEAq9xo8tRwIfiSjUo3K6xrx+WV37mlg2kaF4eVzB
+UvePhXDW1NeDOYWe+TEUIim22YauNidx6m6/x+acvSQtQ0/2Pa1ACVoX1vyblZbr
+5v7/irw8a6uwjn92Hddl8L6eplV5OMjMaGv77SmOtn9ZLFidffa+JBLAccentoER
+BFA6RMyJgg8sN0JskXSVkV1Urw+IKFFoawnl8S+JCRW4h8Fn1y7hu35jZlYlBSvW
+MoaUE436XRaF9eGjTqC+0CosNAODVwdhsFwgni93iQngNGMh4Itb9sbCD48lrffC
+4dvU1L4g2qD0XDmWXtvuGD0CAwEAAQ==
+-----END PUBLIC KEY-----
+EOF
+
+    if [ "$(cmp $inkey $devrotpk)" = "" ]; then
+        touch $stamp
+        return 1
+    fi
+
+    return 0
+}
+
+compare_rotpk_mfg()
+{
+    inkey=$1
+    stamp=$2
+
+    mfgrotpk=${tmpdir}/mfgrotpk.pem
+
+    rm -f $mfgrotpk
+
+    if [ "$version" = "1" ]; then
+        cat <<EOF > $mfgrotpk
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAr5gnYAAeHkN66CFGrbrC
+V67su3Vx+5hDqD+jxzDhvRc+v9Wmh8EFQys+V5tmcHBDpBEoxHPc7+DWWqsHKcnV
+p8umVfPyoCmjaJ+QjAb1Q4UmiqfJ+zsIosD8anr6J821IAtaCwOs+3RYH5ithfJv
+GAjb1/R2vXEdUscoz4OxMSAOAe1lraTaTN1lDc76LCEma1r0ln8j86HqCDzooi+2
+t25h2FNuubu3lf70RRgrdXVFQIiT1wQJzdah48QnfKAs+N1mTitp1Ndd2tls89tn
+29kQVU0NvqlGvgsaUifslZobP8f5w68Np33sOxriFSH6+GDYm6vH0/Mt0XMgdw6G
+xgHvZje7RKk43cyHOiqYHa1XliX1pDZDV+ekG1cdesjvTlKLTptyJT5ozh3J/63j
+dTICIsu/gukKvFO6V6CTKTgcSD3lPnd6S+qj16AhU4VPzVyQw/m0SQCjvo29f1OP
+Vw877qK1TSE9ysK0v95uUzMN4Mxmk3WUyO5XICBl7D5+e3Th8DJOxFZGtYhjmDI+
+uSnJRy+F9VRZty9+JSp8FoBOiFJpilmqzmDxciAaeOS+0VO44nw2CW4OKXRpN3DR
+kN7IZ48ftpN3ed4jgEKMJi71VG6uwKsXSRrMRs/gg5QTi/rAhRWK2Jeux2DAM1/B
+hc/9orURS6yMb+wy8BPu3pcCAwEAAQ==
+-----END PUBLIC KEY-----
+EOF
+    
+        if [ "$(cmp $inkey $mfgrotpk)" = "" ]; then
+            touch $stamp
+            return 1
+        fi
+
+    elif [ "$version" = "2" ]; then
+        cat <<EOF > $mfgrotpk
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAtEhr+phr6YKzDd+o0NfR
+BVHigZpngdsBSdXfVMK6Pb+QOmQuTRfPW3xg5oBWxFsZ8UAJWeLFUBEpg0H5uQRo
+fmHVZ33U7PVb0/A88chI109Iru7qTFrI15SLV+RTKA39k/b6e3JUqEgw+PuK4fmo
+xVnFjwGfQoTu3GvxiQ9w7iy431Se4M8WyUwoamihwCovF8+hzeGgrlwj2+8Xi0Ag
+k/H2frMayuzGI70dE3YONSmFpsJzTlfXKiuDdg9IFr4Sm7BrP71mbW9bqKae7Nmh
+CVhhdtAHEmBOOTI/mPX4woxwcy76fzp7WoSFBgdesYxIUunnungg0LiJYrF5G1UU
+pH766slar44pyacvNxe+dgZtRsBlgmYq1vrN5bk7uTGqUiQSI3f7HSLeXs2sqpCj
+8iZPVtWSJRCDVBZ7nkDVwaF6ddf13uFS9w74z6/DQzC2TeUK1bV4fIVckGB1SkH2
+Dby7Br1qzZT6HTX9U30XwnrNSk0y7sQXCZhi/Kc4HHde3o0m7W1sKlwTbNW+GtXY
+Uipn4CH6pdPZUTWvHIJBia5c45vaBx7/WPorgMgqYAqgT9VSIF/CpZsUeFUSFgHx
+LzIk/JRe8uroYhYd2t0hN+B7I+0wLN/oOP/fw2OeRumTl7Hu5YgjFdfpmAMfb+7g
+amI+IrIuFR1UG+FQX33kfE8CAwEAAQ==
+-----END PUBLIC KEY-----
+EOF
+
+        if [ "$(cmp $inkey $mfgrotpk)" = "" ]; then
+            touch $stamp
+            return 1
+        fi
+
+        # Otherwise try second key.
+        cat <<EOF > $mfgrotpk
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAlgRaGi6xo79GgduhaK81
+upb+LTPxrsmUXqot119BCnId4yDF91gwS53zFbs+416J3+O/LipdiRcILrCgue1/
+cuRz2ufZosYAZLfXHLc7qIOxl7+OrVZi15t3FocJz4T0w3wuMgb7szTCprxMUIww
+APzXwqww84gp3fOkGARbqkwLoC/fjZ5pyFbX7phOjqenFnEOifa1TIcR6bS8eIqG
+7LqAUdVcS8u7jqOM3SUA3t6MDhL7Fz21vrYaLiwJOPkXLrjcsWehN7//FA0KU35f
+3B3Fw9s/3ty0Z+hIIDW2D2mROJ9TMWJfwP4l/7jCWJTxELTI+RAIXIRRvHyEv64t
+78910ocvvVNaLZbfszcY65TvXJMsudbU/mb0TWtHcc+mQuY1CPq5OgFTpjNGk2c6
+6TDqywFuSeWZh6S2RrMmuvQy049GmGq1VFivpLGh9BZ8aKGTNMPZvA9rwnmUzor2
+nL7xZV79z6SEcN2Uh+zZ+T9lkdrbNMD08f0OkyNHTFuFsKBQaR1fQm6tC5YM4Q9K
+5Ob1gngbkDKrFiB4cV57Hq/Z/1L8orqUmOl7+GOYdb8P7VM4vDJY+a4DbKsdk+m/
+o3SbK3TT1/4WOQ6YW/i36JaIFUyGZYYe2v0JYtxJoScxGv3Oj5kNK6J5Nun10Lkq
+8PcyxUgRbL6fokDjXK5u9D0CAwEAAQ==
+-----END PUBLIC KEY-----
+EOF
+
+        if [ "$(cmp $inkey $mfgrotpk)" = "" ]; then
+            touch $stamp
+            return 1
+        fi
+
+        # Otherwise try third key.
+        cat <<EOF > $mfgrotpk
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAuBJr0DLdcdrHcYWRE27c
+fHgfa6hOTfwfjLZOtuVMopTYCkhVWzxOc/FAh9s1oFK4j3BSpNr0G0SDUn4lJcPX
+AvJ0aDDAHvsAPPQSWDolDdz9AZ1glVVeeEzyaPl6aPm36nxjsEQSm4lA+63L7Y/C
+ndnEYr8aq8jiIrnxWbcNK+g+vNt5CL6+mLclyex0OqFJ644s349Klinwx9rhqaxu
+AGXgrj+C6ZTTBtZq1gswaFqeYt4nu+l6W90zEMwrcdhFHLFe4B5yZ+aimYl+6gKw
+iTjQ9C0uUeOgTWtu8gR65QJV0uddpoYshCXio8GaM0iXgq5R7sbVXVccijUT/h7r
+JJ3k3+W5/9iA3UrTgl/yrt89zCvbs8mYGItdf4vCzcVquNDyidLhpkOcn+th0PSs
++UVxwD5sJzHU4Agxrz/MZkVqrCdFXWaVD+BVlHH0kesD9JZ1x+LMfKujmpBrtNnC
+PXROuX+nLs/9llrMY22OfMmDC/f187jG/BIuo61TUZ8VcRAUQEQIl4I6e5UiWz6R
+IY4B6jyE7OQ5QU4ZvWT1H/C1Hor5Io6onmjqtIVFPt5R/qKHY7RWFGyyo8YfvaKd
+J6inGqrvKJZ4V2FzcRWS0PMUOe1YyOmhQrrgyP2Ts74geB90vxQ37p7AeuLlMbce
+uhHZD+izSMuQe3JqTkkLoxcCAwEAAQ==
+-----END PUBLIC KEY-----
+EOF
+
+        if [ "$(cmp $inkey $mfgrotpk)" = "" ]; then
+            touch $stamp
+            return 1
+        fi
+
+        # Otherwise try fourth key.
+        cat <<EOF > $mfgrotpk
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAtMMI8zlnuA2BSY4iGKX0
+vFgp41VGsKsUh3zhbsjcrpKUMpbCsIOjLMQ/m3zUTfJP9WjoFddI0rnPDJVkPZBf
+zzMtmrw+l28G8eM9/eSReEroPpg39g/wrw1Uk7xycI9nIL37F+Jfl4J7YxqoFAvG
+qmX3gxmXtFMtB61XKKHV7+RBwt7d1mMToPdpuJ1of8lztznh/hUrq5TFKugzhKhu
+BBptsJZE8hjLEt1JmZxxeF4RhhJgdoDa9RAO/5CebCmFEeqPvBDCTNzZmU64S3pS
+oW3JQVvi8y+w5hN54xnGdK/ZuG37E04cIUreuSAnDyqj107dRCAZi08rcnmdB3pF
+BhRUQscwqEOigxSbi44upn2AxWgY/I7AI/gq3Pp+JzCK0ClwmVkah5VxBZSVQ+BK
+rwGJC4Fw75FQWw/eprGRaEjlfKRsDwCqxeekk32APtjoQZt0l648S7IH0Jo/QsTM
+eqk9SWhuIYs96GbWzDlCo0HAxb8TLL1Ml5pifcjnjd7X9XaBTAERh0ejPQdZ06Az
+hcqfc/9++AZT6mZuiBu7ORMS33o6jGPt+oN9WDRNYYO96MWaTaPCROsWNR12okRO
+2n41NhVjCHuI332awo5TB5WBR6zuqQ+s3ZG4jwzmLGjfUmW6yz3sVgEkCI9/8thR
+oWOXTHe1tWmSg6xE9jkwD4ECAwEAAQ==
+-----END PUBLIC KEY-----
+EOF
+
+        if [ "$(cmp $inkey $mfgrotpk)" = "" ]; then
+            touch $stamp
+            return 1
+        fi
+
+    fi
+
+    return 0
+}
+
+verify_rotpk()
+{
+    cert=$1
+    keyder=$2
+
+    certkey=${tmpdir}/pkey.pem
+    mfgkeystamp=${tmpdir}/mfgkeystamp
+    devkeystamp=${tmpdir}/devkeystamp
+
+    rm -f $certkey $mfgkeystamp $devkeystamp
+
+    # Extract certificate public key
+    openssl x509 -pubkey -noout -inform der -in $cert > $certkey
+
+    # Check if public key is a development key
+    compare_rotpk_dev $certkey $devkeystamp | true
+    # Check if public key is an official key
+    compare_rotpk_mfg $certkey $mfgkeystamp | true
+
+    if [ -f "$mfgkeystamp" ]; then
+        echo "  NVIDIA official ROT key (production)"
+    elif [ -f "$devkeystamp" ]; then
+        echo "  NVIDIA development ROT key (development)"
+    else
+        echo "  non-NVIDIA ROT key (unknown)"
+    fi
+
+    # Convert key from PEM to DER format
+    openssl rsa -pubin -inform pem -in $certkey -outform der -out $keyder \
+        2> /dev/null
+
+}
+
+verify_cert_pk()
+{
+    cert=$1
+    keyder=$2
+
+    keypem=${tmpdir}/key.pem
+    certkey=${tmpdir}/pkey.pem
+
+    rm -f $certkey $keypem
+
+    # Convert key from DER to PEM format
+    openssl rsa -pubin -inform der -in $keyder -outform pem -out $keypem \
+        2> /dev/null
+
+    # Extract certificate public key
+    openssl x509 -pubkey -noout -inform der -in $cert > $certkey
+
+    # Compare public keys
+    cmp $keypem $certkey
+    if [ "$(echo $?)" != "0" ]; then
+        echo "** failed to verify PK"
+        exit 1
+    fi
+
+    print_debug "$(basename $cert): public key verified."
+}
+
+read_tbs_certificate()
+{
+    in=$1
+    out=$2
+
+    #
+    # Extract the sequence TBSCertificate which contains certificate
+    # information that is signed. The ASN.1 DER encoded TBSCertificate
+    # is used as the input to the signature function.
+    #
+    # TBSCertificate  ::=  SEQUENCE  {
+    # 	version         [0]  Version DEFAULT v1,
+    # 	serialNumber         CertificateSerialNumber,
+    # 	signature            AlgorithmIdentifier,
+    # 	issuer               Name,
+    # 	validity             Validity,
+    # 	subject              Name,
+    # 	subjectPublicKeyInfo SubjectPublicKeyInfo,
+    # 	issuerUniqueID  [1]  IMPLICIT UniqueIdentifier OPTIONAL,
+    #   	                   -- If present, version MUST be v2 or v3
+    # 	subjectUniqueID [2]  IMPLICIT UniqueIdentifier OPTIONAL,
+    #       	               -- If present, version MUST be v2 or v3
+    #	extensions      [3]  Extensions OPTIONAL
+    #
+    #
+    off=4
+    len=$(openssl asn1parse -inform der -in $in \
+            | head -n 2 | grep "4:d=1" | cut -d"=" -f4 | tr -dc '0-9')
+    # Include header (4 bytes)
+    dd if=$in of=$out skip=$off bs=$(expr $len + 4) count=1 iflag=skip_bytes \
+        2> /dev/null
+}
+
+read_signature_value()
+{
+    in=$1
+    out=$2
+
+    #
+    # Extract the certificate signature value. The signatureValue field
+    # contains a digital signature computed upon the ASN.1 DER encoded
+    # TBSCertificate.
+    #
+    off=$(openssl asn1parse -inform der -in $in \
+            | tail -n 1 | cut -d":" -f1 | tr -dc '0-9')
+    len=512
+    # Skip header (4 bytes) and one extra byte (zero byte)
+    dd if=$in of=$out skip=$(expr $off + 4 + 1) bs=$len count=1 iflag=skip_bytes \
+        2> /dev/null
+}
+
+read_extension_value()
+{
+    oid=$1
+    in=$2
+    out=$3
+
+    # The extension value follows static bytes "3051300D060960864801650304020305000440".
+    #
+    # Here's an exemple in DER ASN.1 format:
+    #    857:d=5  hl=2 l=  12 prim: OBJECT            :1.3.6.1.4.1.33049.2100.201
+    #    871:d=5  hl=2 l=   1 prim: BOOLEAN           :255
+    #    874:d=5  hl=2 l=  83 prim: OCTET STRING      [HEX DUMP]:3051300D0609608648016503040203050004406410682AFF87ECC0B8081DCF2D5DF17DFA1978CACA259EA4C5A6EF881989E85D7B8A270DF640E05CDF95233CFF087EDBC167342F723064F1CFBF29795612905B
+    #
+    off=$(openssl asn1parse -inform der -in $in \
+            | grep "$oid" | cut -d":" -f1 | tr -dc '0-9')
+    len=64
+    # Skip the following:
+    #   OID object: header (2 bytes) and data (12 bytes),
+    #   Flag: header (2 bytes) and data (1 byte),
+    #   Value: header (2 bytes) and static bytes (19 bytes)
+    dd if=$in of=$out skip=$(expr $off + 38) bs=$len count=1 iflag=skip_bytes \
+        2> /dev/null
+}
+
+verify_cert_sig()
+{
+    cert=$1
+
+    certkey=${tmpdir}/pkey.pem
+    tbscert=${tmpdir}/tbscertificate.der
+    sigval=${tmpdir}/sigvalue.der
+
+    rm -f $certkey $tbscert $sigval
+
+    # Determine the Signature Algorithm.
+    # Only 'rsassaPss' and 'sha512WithRSAEncryption' are supported.
+    alg=$(openssl x509 -inform der -in $cert -text -noout \
+            -certopt ca_default -certopt no_validity -certopt no_serial \
+            -certopt no_subject -certopt no_extensions -certopt no_signame \
+            | grep "Signature Algorithm:" | cut -d":" -f2 | tr -d '[:space:]')
+    if [ "$alg" != "rsassaPss" ] && [ "$alg" != "sha512WithRSAEncryption" ]; then
+        echo "** Signature algorith '$alg' unsupported"
+        exit 1
+    fi
+
+    # Extract certificate public key
+    openssl x509 -pubkey -noout -inform der -in  $cert > $certkey
+
+    # Read TBSCertificate 
+    read_tbs_certificate $cert $tbscert
+
+    # Read the signatureValue
+    read_signature_value $cert $sigval
+
+    # Set OpenSSL arguments for signature verification. 
+    opensslargs=
+    if [ "$alg" = "rsassaPss" ]; then
+        opensslargs="-sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:32 -sigopt rsa_mgf1_md:sha512"
+    fi
+
+    # Verify certificate signature.
+    openssl dgst \
+        -sha512 \
+        -verify $certkey \
+        -signature $sigval \
+        $opensslargs \
+        $tbscert
+    
+    if [ "$(echo $?)" != "0" ]; then
+        echo "** failed to verify '$cert' signature."
+        exit 1
+    fi
+
+    print_debug "$(basename $cert): Content certificate verified."
+}
+
+verify_bl_digest()
+{
+    oid=$1
+    cert=$2
+    bl=$3
+
+    dgst=${tmpdir}/dgst.bin
+    blsha512=${tmpdir}/blsha512.bin
+
+    rm -f $dgst $blsha512
+
+    # Read extension value
+    read_extension_value "$oid" $cert $dgst
+
+    # Verify extension value
+    openssl dgst -sha512 -binary -out $blsha512 $bl
+    cmp $dgst $blsha512
+    if [ "$(echo $?)" != "0" ]; then
+        echo "** failed to verify '$oid'"
+        exit 1
+    fi
+
+    print_debug "$(basename $cert): OID '$oid' verified."
+}
+
+read_extension_key()
+{
+    oid=$1
+    in=$2
+    out=$3
+
+    off=$(openssl asn1parse -inform der -in $in \
+            | grep "$oid" | cut -d":" -f1 | tr -dc '0-9')
+    len=550
+    # Skip the following:
+    #   OID object: header (2 bytes) and data (12 bytes),
+    #   Flag: header (2 bytes) and data (1 byte),
+    #   Value: header (4 bytes)
+    dd if=$in of=$out skip=$(expr $off + 21) bs=$len count=1 iflag=skip_bytes \
+        2> /dev/null
+}
+
+cleanup_tmp_files()
+{
+    # Cleanup temp files.
+    rm -fr ${tmpdir}
+}
+
+exit_no_errors()
+{
+    cleanup_tmp_files
+
+    echo ""
+    echo "Done."
+
+    exit 0
+}
+
+##############################################################################
+##############################################################################
+##
+## Script starts here
+##
+##############################################################################
+##############################################################################
+
+echo ""
+echo "Verify BFB for BlueField-$(expr $version + 1) platform"
+echo "-----------------------------------"
+
+cleanup_tmp_files
+
+##############################################################################
+# Extract the content of the BFB file 
+##############################################################################
+
+# Create BFB temp directory.
+bfbdir=${tmpdir}/bfb
+if [ ! -d "${bfbdir}" ]; then
+    mkdir -p ${bfbdir}
+fi
+
+# Read the BFB file from eMMC boot partition, if needed.
+if [ -n "$device" ]; then
+    inbfb=${tmpdir}/boot.bfb
+    # Cleanup old file, if needed.
+    rm -f $inbfb
+    # Retrieve BFB from the eMMC
+    $mlxbfbootctl -r $device -b $inbfb \
+        2>&1 /dev/null
+fi
+
+rm -f ${bfbdir}/dump-*
+
+# Extract the content of the BFB.
+(cd ${bfbdir}; $mkbfb -x $inbfb)
+
+##############################################################################
+# Check if certificates are present 
+##############################################################################
+
+## First of all, if BL2/BL2R certificates are
+## not present, just exit; assume the BFB is unsigned.
+
+bl2rcert=${bfbdir}/dump-bl2r-cert-v${version}
+bl2r=${bfbdir}/dump-bl2r-v${version}
+
+bl2cert=${bfbdir}/dump-bl2-cert-v${version}
+bl2=${bfbdir}/dump-bl2-v${version}
+
+nobl2rcert=
+if [ ! -f "$bl2rcert" ] && [ "$version" = 1 ]; then
+    nobl2rcert=1
+fi
+
+nobl2cert=
+if [ ! -f "$bl2cert" ]; then
+    nobl2cert=1
+fi
+
+if [ -n "$nobl2rcert" ] || [ -n "$nobl2cert" ]; then
+    echo "Unsigned BFB file."
+    exit_no_errors 
+fi
+
+##############################################################################
+# Determine Root-of-Trust Public Key, if needed
+##############################################################################
+
+## If the ROTPK key is not specified, then
+## read the rotpk key from the BL2/BL2R
+## certificate.
+
+if [ -z "$rotpk" ]; then
+    rotpk=${tmpdir}/rotpk.der
+
+    echo ""
+    echo "Verify Root-of-Trust Public Key:"
+    if [ "$version" != "1" ] && [ -f "$bl2cert" ]; then
+        verify_rotpk $bl2cert $rotpk
+    elif [ "$version" = "1" ] && [ -f "$bl2rcert" ]; then
+        verify_rotpk $bl2rcert $rotpk
+    fi
+fi
+
+##############################################################################
+# Verify Chain-of-Trust (CoT) certificates
+##############################################################################
+
+## Exit if "skip_cot_verify" flag is set.
+
+if [ -n "$skip_cot_verify" ]; then
+    exit_no_errors
+else
+    echo ""
+    echo "Verify Chain-of-Trust certificates:"
+fi
+
+#
+# Verify BL2R Content Certificate
+#
+
+bl2rcert=${bfbdir}/dump-bl2r-cert-v${version}
+bl2r=${bfbdir}/dump-bl2r-v${version}
+
+if [ -f "$bl2rcert" ]; then
+
+    echo -n "  BL2R Content Certificate..."
+
+    # Verify certificate public key
+    verify_cert_pk $bl2rcert $rotpk
+
+    # Verify certificate signature
+    verify_cert_sig $bl2rcert $bl2r
+
+    # Verify BL2R Hash
+    #   OID: 1.3.6.1.4.1.33049.2100.210 
+    #
+    verify_bl_digest \
+        "1.3.6.1.4.1.33049.2100.210" \
+        $bl2rcert \
+        $bl2r
+
+fi
+
+#
+# Verify BL2 Content Certificate
+#
+
+bl2cert=${bfbdir}/dump-bl2-cert-v${version}
+bl2=${bfbdir}/dump-bl2-v${version}
+
+if [ -f "$bl2cert" ]; then
+    echo -n "  BL2 Content Certificate..."
+
+    # Verify certificate public key
+    verify_cert_pk $bl2cert $rotpk
+
+    # Verify certificate signature
+    verify_cert_sig $bl2cert
+
+    # Verify BL2R Hash - TrustedBootFirmwareHash
+    # The TrustedBootFirmwareHash is expected in
+    # certificate extension.
+    #   OID: 1.3.6.1.4.1.33049.2100.201 
+    #
+    verify_bl_digest \
+        "1.3.6.1.4.1.33049.2100.201" \
+        $bl2cert \
+        $bl2
+
+fi
+
+#
+# Verify DDR Content Certificate
+#
+
+ddrcert=${bfbdir}/dump-ddr-cert-v${version}
+ddrini=${bfbdir}/dump-ddr_ini-v${version}
+ddrsnps=${bfbdir}/dump-snps_images-v${version}
+ddrateimem=${bfbdir}/dump-ddr_ate_imem-v${version}
+ddratedmem=${bfbdir}/dump-ddr_ate_dmem-v${version}
+ddr5snps=${bfbdir}/dump-ddr5_snps_images-v${version}
+
+echo -n "  DDR Content Certificate..."
+
+if [ ! -f "$ddrcert" ]; then
+    echo "Not Found"
+
+else
+    # Verify certificate public key
+    verify_cert_pk $ddrcert $rotpk
+
+    # Verify certificate signature
+    verify_cert_sig $ddrcert
+
+    # Verify DdrIniHash
+    # The DdrIniHash is expected in
+    # certificate extension.
+    #   OID: 1.3.6.1.4.1.33049.2100.204 
+    #
+    verify_bl_digest \
+        "1.3.6.1.4.1.33049.2100.204" \
+        $ddrcert \
+        $ddrini
+    
+    # Verify DdrSnpsHash
+    # The DdrSnpsHash is expected in
+    # certificate extension.
+    #   OID: 1.3.6.1.4.1.33049.2100.205 
+    #
+    verify_bl_digest \
+        "1.3.6.1.4.1.33049.2100.205" \
+        $ddrcert \
+        $ddrsnps
+    
+    # Verify DdrAteImemHash
+    # The DdrAteImemHash is expected in
+    # certificate extension.
+    #   OID: 1.3.6.1.4.1.33049.2100.206 
+    #
+    verify_bl_digest \
+        "1.3.6.1.4.1.33049.2100.206" \
+        $ddrcert \
+        $ddrateimem
+    
+    # Verify DdrAteDmemHash
+    # The DdrAteDmemHash is expected in
+    # certificate extension.
+    #   OID: 1.3.6.1.4.1.33049.2100.207 
+    #
+    verify_bl_digest \
+        "1.3.6.1.4.1.33049.2100.207" \
+        $ddrcert \
+        $ddratedmem
+    
+    if [ "$version" = "2" ]; then
+        # Verify Ddr5SnpsHash
+        # The Ddr5SnpsHash is expected in
+        # certificate extension.
+        #   OID: 1.3.6.1.4.1.33049.2100.208 
+        #
+        verify_bl_digest \
+            "1.3.6.1.4.1.33049.2100.208" \
+            $ddrcert \
+            $ddr5snps
+    fi
+
+fi
+
+#
+# Verify Trusted Key Certificate
+#
+
+trustedkeycert=${bfbdir}/dump-trusted-key-cert-v${version}
+trustedpk=${tmpdir}/trustedpk.der
+untrustedpk=${tmpdir}/untrustedpk.der
+
+rm -f $trustedpk $untrustedpk
+
+echo -n "  Trusted Key Certificate..."
+
+if [ ! -f "$trustedkeycert" ]; then
+    echo "Not Found"
+
+else
+    # Verify certificate public key
+    verify_cert_pk $trustedkeycert $rotpk 
+
+    # Verify certificate signature
+    verify_cert_sig $trustedkeycert
+
+    # Read Trusted World public key
+    read_extension_key \
+        "1.3.6.1.4.1.33049.2100.302" \
+        $trustedkeycert \
+        $trustedpk
+    
+    # Read Untrusted World public key
+    read_extension_key \
+        "1.3.6.1.4.1.33049.2100.303" \
+        $trustedkeycert \
+        $untrustedpk
+
+    #
+    # Verify BL31 Key Certificate
+    #
+
+    bl31keycert=${bfbdir}/dump-bl31-key-cert-v${version}
+    bl31key=${tmpdir}/bl31key.der
+    bl31cert=${bfbdir}/dump-bl31-cert-v${version}
+    bl31=${bfbdir}/dump-bl31-v${version}
+
+    rm -f $bl31key
+
+    echo -n "  BL31 Key Certificate..."
+
+    if [ ! -f "$bl31keycert" ]; then
+        echo "Not Found"
+
+    else
+        # Verify certificate public key
+        verify_cert_pk $bl31keycert $trustedpk
+
+        # Verify certificate signature
+        verify_cert_sig $bl31keycert
+
+        # Read BL31 Key Certificate public key
+        read_extension_key \
+            "1.3.6.1.4.1.33049.2100.501" \
+            $bl31keycert \
+            $bl31key
+        
+        #
+        # Verify BL31 Content Certificate
+        #
+
+        echo -n "  Bl31 Content Certificate..."
+
+        if [ ! -f "$bl31cert" ]; then
+            echo "Not Found"
+
+        else
+            # Verify certificate public key
+            verify_cert_pk $bl31cert $bl31key
+
+            # Verify certificate signature
+            verify_cert_sig $bl31cert
+
+            # Verify BL31 Hash - SoCAPFirmwareHash
+            # The SoCAPFirmwareHash is expected in
+            # certificate extension.
+            #   OID: 1.3.6.1.4.1.33049.2100.603 
+            #
+            verify_bl_digest \
+                "1.3.6.1.4.1.33049.2100.603" \
+                $bl31cert \
+                $bl31
+        fi
+
+    fi
+
+    #
+    # Verify BL32 Key Certificate
+    #
+
+    bl32keycert=${bfbdir}/dump-bl32-key-cert-v${version}
+    bl32key=${tmpdir}/bl32key.der
+    bl32cert=${bfbdir}/dump-bl32-cert-v${version}
+    bl32=${bfbdir}/dump-bl32-v0
+
+    rm -f $bl32key
+
+    echo -n "  BL32 Key Certificate..."
+
+    if [ ! -f "$bl32keycert" ]; then
+        echo "Not Found"
+
+    else
+        # Verify certificate public key
+        verify_cert_pk $bl32keycert $trustedpk
+
+        # Verify certificate signature
+        verify_cert_sig $bl32keycert
+
+        # Read BL32 Key Certificate public key
+        read_extension_key \
+            "1.3.6.1.4.1.33049.2100.901" \
+            $bl32keycert \
+            $bl32key
+        
+        #
+        # Verify BL32 Content Certificate
+        #
+
+        echo -n "  Bl32 Content Certificate..."
+
+        if [ ! -f "$bl32cert" ]; then
+            echo "Not Found"
+
+        else
+            # Verify certificate public key
+            verify_cert_pk $bl32cert $bl32key
+
+            # Verify certificate signature
+            verify_cert_sig $bl32cert
+
+            # Verify BL32 Hash - TrustedOSFirmwareHash
+            # The TrustedOSFirmwareHash is expected in
+            # certificate extension.
+            #   OID: 1.3.6.1.4.1.33049.2100.1001 
+            #
+            verify_bl_digest \
+                "1.3.6.1.4.1.33049.2100.1001" \
+                $bl32cert \
+                $bl32
+        fi
+
+    fi
+
+    #
+    # Verify BL33 Key Certificate
+    #
+
+    bl33keycert=${bfbdir}/dump-bl33-key-cert-v${version}
+    bl33key=${tmpdir}/bl33key.der
+    bl33cert=${bfbdir}/dump-bl33-cert-v${version}
+    # BL33 is common across platforms
+    bl33=${bfbdir}/dump-bl33-v0
+
+    rm -f $bl33key
+
+    echo -n "  BL33 Key Certificate..."
+
+    if [ ! -f "$bl33keycert" ]; then
+        echo "Not Found"
+
+    else
+        # Verify certificate public key
+        verify_cert_pk $bl33keycert $untrustedpk
+
+        # Verify certificate signature
+        verify_cert_sig $bl33keycert
+
+        # Read BL33 Key Certificate public key
+        read_extension_key \
+            "1.3.6.1.4.1.33049.2100.1101" \
+            $bl33keycert \
+            $bl33key
+        
+        #
+        # Verify BL33 Content Certificate
+        #
+
+        echo -n "  Bl33 Content Certificate..."
+
+        if [ ! -f "$bl33cert" ]; then
+            echo "Not Found"
+
+        else
+            # Verify certificate public key
+            verify_cert_pk $bl33cert $bl33key
+
+            # Verify certificate signature
+            verify_cert_sig $bl33cert
+
+            # Verify BL33 Hash - NonTrustedWorldBootloaderHash
+            # The NonTrustedWorldBootloaderHash is expected in
+            # certificate extension.
+            #   OID: 1.3.6.1.4.1.33049.2100.1201 
+            #
+            verify_bl_digest \
+                "1.3.6.1.4.1.33049.2100.1201" \
+                $bl33cert \
+                $bl33
+        fi
+
+    fi
+
+fi
+
+##############################################################################
+# End of script
+##############################################################################
+
+exit_no_errors

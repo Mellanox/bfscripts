@@ -107,12 +107,12 @@ fi
 # Only allow capsule when secure boot is enabled.
 if [ -n "$bootctl_mode" ]; then
     if [ -n "$secure_boot" ]; then
-        echo "ERROR: need to use capsule in secure boot mode"
+        echo "ERROR: need to use capsule in secure boot mode" >&2
         exit 1
     fi
 
     if [ -n "$capsule_mode" ]; then
-        echo "ERROR: Use either options '--bootctl' or '--capsule'"
+        echo "ERROR: Use either options '--bootctl' or '--capsule'" >&2
         exit 1
     fi
 elif [ -z "$capsule_mode" ]; then
@@ -148,18 +148,17 @@ capsule_location=/lib/firmware/mellanox/boot/capsule
 
 uefi_capsule_update()
 {
-    # Set EFI System partition mountpoint
-    mount_efi=/mnt/efi_system_partition
-
     # Set capsule update file variable name
     capsule_efi=MmcBootCap
-    device_efi=/dev/mmcblk0p1
+    if [ -f "$capsule_file" ]; then
+        capsule_efi=$(basename $capsule_file)
+    fi
 
     # UEFI will read the capsule image from the EFI System Partition.
     # Check whether an EFI System partition is present. If not, then
     # the capsule update is not supported;
     if ! fdisk -l | grep -q "EFI System" >/dev/null; then
-        echo "cannot find EFI System Partition"
+        echo "cannot find EFI System Partition" >&2
         exit 2
     fi
 
@@ -168,46 +167,62 @@ uefi_capsule_update()
     fi
 
     if [ ! -f "$capsule_file" ]; then
-        echo "Capsule file not found"
+        echo "Capsule file not found" >&2
         exit 2
     fi
 
-    # Check whether the EFI System Partition is mounted. If not mounted,
-    # then create the mountpoint and mount the disk partition to the
-    # default location in order to copy the update files.
-    esp_dir=$(mount | grep $device_efi | cut -f 3 -d' ')
-    if [ -z "$esp_dir" ]; then
-        if [ ! -d $mount_efi ]; then
-            $run mkdir $mount_efi
-        fi
-        $run mount $device_efi $mount_efi
-    else
-        mount_efi=$esp_dir
-    fi
+    has_debug_bfb $capsule_file
 
-    # Copy the capsule file into the EFI System Partition.
-    # "EFI/UpdateCapsule" is the standard directory defined by UEFI spec.
-    # Files in this directory will processed as capsules in alphabetical
-    # order once the capsule flag is set in the 'OsIndications' variable
-    # which is done by the printf command below.
-    $run mkdir -p "$mount_efi/EFI/UpdateCapsule" 2>/dev/null
-    $run cp $capsule_file "$mount_efi/EFI/UpdateCapsule/${capsule_efi}1"
-    if [ "$policy" = "dual" ]; then
-        $run cp $capsule_file "$mount_efi/EFI/UpdateCapsule/${capsule_efi}2"
-    fi
+    # It is possible that multiple EFI System partitions are present;
+    # for example, an eMMC partition and/or an NVMe partition.
+    # Thus, check whether a given EFI System Partition is mounted.
+    # If not mounted, then create the mountpoint and mount the disk
+    # partition to the default location in order to copy the update
+    # files. It is harmless to copy the files to multiple EFI System
+    # partitions.
+    device_efi=$(blkid | grep -i -e 'system-boot' -e 'efi' | cut -d':' -f1 | tr '\n' ' ')
+    for curr_device_efi in $device_efi
+    do
+        # Set EFI System partition mountpoint
+        mount_efi=/mnt/efi_system_partition
+
+        esp_dir=$(mount | grep $curr_device_efi | cut -f 3 -d' ')
+        if [ -z "$esp_dir" ]; then
+            if [ ! -d $mount_efi ]; then
+                $run mkdir $mount_efi
+            fi
+            echo "mount $curr_device_efi at $mount_efi"
+            $run mount $curr_device_efi $mount_efi
+        else
+            mount_efi=$esp_dir
+        fi
+
+        # Copy the capsule file into the EFI System Partition.
+        # "EFI/UpdateCapsule" is the standard directory defined by UEFI spec.
+        # Files in this directory will processed as capsules in alphabetical
+        # order once the capsule flag is set in the 'OsIndications' variable
+        # which is done by the printf command below.
+        $run mkdir -p "$mount_efi/EFI/UpdateCapsule" 2>/dev/null
+        $run cp $capsule_file "$mount_efi/EFI/UpdateCapsule/${capsule_efi}1"
+        if [ "$policy" = "dual" ]; then
+            $run cp $capsule_file "$mount_efi/EFI/UpdateCapsule/${capsule_efi}2"
+        fi
+        $run sync
+
+        # Doing some cleanup, if needed
+        if [ -z "$esp_dir"  ]; then
+            echo "umount $curr_device_efi"
+            $run umount "$mount_efi"
+            $run rmdir "$mount_efi"
+            $run sync
+            # Wait until eMMC internal cache is fully flushed
+            $run sleep 3
+        fi
+    done
 
     $run printf "\x07\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00" > \
         "${efivars}/${os_var}"
     $run sync
-
-    # Doing some cleanup, if needed
-    if [ -z "$esp_dir"  ]; then
-        $run umount "$mount_efi"
-        $run rmdir "$mount_efi"
-        $run sync
-        # Wait until eMMC internal cache is fully flushed
-        $run sleep 3
-    fi
 
     cat <<EOF
 
@@ -225,17 +240,59 @@ EOF
     return 0
 }
 
+verify_bfb_signature()
+{
+    in_bfb=$1
+    in_ver=$2
+
+    if [ ! "$(which openssl 2>/dev/null)" ]; then
+        echo "cannot find \"openssl\" command!"
+        echo "skip BFB signature verification"
+        return 0
+    fi
+
+    if [ ! "$(which python3 2>/dev/null)" ]; then
+        echo "cannot find \"python3\" command!"
+        echo "skip BFB signature verification"
+        return 0
+    fi
+
+    # Read Arm lifecycle, BFB is validated in lifecycle state secure only.
+    lc=$(mlxbf-bootctl | grep lifecycle | cut -f2 -d':' | tr -d ' ')
+    if [ "$lc" = "Secured(development)" ] || [ "$lc" = "GASecured" ]; then
+        # Determine the secure boot key type.
+        if [ "$lc" = "Secured(development)" ]; then
+            sbkey="development"
+        elif [ "$lc" = "GASecured" ]; then
+            sbkey="production"
+        fi
+
+        # BFB file verification.
+        output=$(bfsbverify --bfb $in_bfb --version $in_ver)
+        if [ "$(echo $output | grep 'Unsigned BFB file')" ]; then
+            echo "unsigned BFB file!"
+            exit 2
+        elif [ ! "$(echo $output | grep $sbkey)" ]; then
+            echo "bad BFB file signature!"
+            exit 2
+        fi
+    else
+        echo "Arm life cycle state \"$lc\""
+        echo "skip BFB signature verification"
+    fi
+}
+
 kernel_bootctl_update()
 {
     bfb_device=/dev/mmcblk0
 
     if ! command -v mlxbf-bootctl >/dev/null; then
-        echo "mlxbf-bootctl program is not supported"
+        echo "mlxbf-bootctl program is not supported" >&2
         exit 2
     fi
 
     if [ ! -b "$bfb_device" ]; then
-        echo "bad block device $bfb_device"
+        echo "bad block device $bfb_device" >&2
         exit 2
     fi
 
@@ -244,8 +301,28 @@ kernel_bootctl_update()
     fi
 
     if [ ! -f "$bfb_file" ]; then
-        echo "cannot find file $bfb_file"
+        echo "cannot find file $bfb_file" >&2
         exit 2
+    fi
+
+    has_debug_bfb $bfb_file
+
+    # Figure out te platform by searching for an ACPI table
+    # specific to the BF version (ACPI trick to learn about
+    # the platform version) and verify BFB signature,
+    # if needed. BFB sinature verification is ignored in
+    # BlueField-1 devices.
+    if [ -e /sys/firmware/acpi/tables ]; then
+        if hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF22; then
+            # Verify BFB for BlueField-2 device.
+            verify_bfb_signature $bfb_file 1
+        elif hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF33; then
+            # Verify BFB for BlueField-3 device.
+            verify_bfb_signature $bfb_file 2
+        fi
+    else
+        echo "cannot find acpi tables!"
+        echo "skip BFB signature verification"
     fi
 
     $run /sbin/mlxbf-bootctl -s -d $bfb_device -b $bfb_file
@@ -268,6 +345,52 @@ EOF
     return 0
 }
 
+has_debug_bfb()
+{
+    # A debug image consists of a regular BFB file which
+    # includes an authorization certificate (a.k.a. AuthCert).
+    # The debug image is expected to be installed in Secure
+    # LifeCycle state.
+    #
+    # Implement a dumb check to verify whether the
+    # authorization certificate is present within the
+    # BFB. It is a basic indication that the BFB is
+    # intended for debug.
+
+    in_file=$1
+
+    # Read Arm lifecycle, debug image is ignored in lifecycle state non-secure.
+    lc=$(mlxbf-bootctl | grep lifecycle | cut -f2 -d':' | tr -d ' ')
+    if [ "$lc" != "Secured(development)" ] && [ "$lc" != "GASecured" ]; then
+        return 0
+    fi
+
+    authcert_cn="Trusted Debug BF Root Authorization Certificate"
+    # Add dummy 'tr' command, because 'grep' might fail and cause the script
+    # to exit as '-e' is set. 
+    authcert="$(strings "$in_file" | grep -m 1 "$authcert_cn" | tr -d ' ')"
+    if [ -z "$authcert" ]; then
+        return 0
+    fi
+
+    # If we reach here, it means that a debug image is
+    # going to be installed, thus request user confirmation.
+    cat <<EOF
+
+    ***********************************************************************
+    ***                                                                 ***
+    ***   You are about to install a debug image on Secured platform.   ***
+    ***                                                                 ***
+    ***********************************************************************
+EOF
+    read -p "Continue (Y|n)[n]: " -n 1 -r
+    echo # (optional) move to a new line
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Aborted!"
+        exit 0
+    fi
+}
+
 #
 # Parse command arguments
 #
@@ -277,7 +400,7 @@ if [ -n "$bootctl_mode" ] || [ -n "$capsule_mode" ]; then
     capsule_file=
     if [ $# -eq 1 ]; then
         if [ ! -f "$1" ]; then
-	    echo "cannot find file $1"
+	    echo "cannot find file $1" >&2
 	    exit 1
 	fi
         bfb_file=$1
@@ -287,7 +410,7 @@ fi
 
 if [ -n "$policy" ]; then
     if [ "$policy" != "single" ] && [ "$policy" != "dual" ]; then
-        echo "ERROR: policy must be either 'single' or 'dual'"
+        echo "ERROR: policy must be either 'single' or 'dual'" >&2
         exit 1
     fi
 else # default policy
@@ -296,7 +419,7 @@ fi
 
 if [ -n "$bootctl_mode" ]; then
     if [ $# -ge 2 ]; then
-        echo "too many arguments"
+        echo "too many arguments" >&2
         exit 1
     fi
 
@@ -305,7 +428,7 @@ if [ -n "$bootctl_mode" ]; then
 
 elif [ -n "$capsule_mode" ]; then
     if [ $# -ge 2 ]; then
-        echo "too many arguments with option '--capsule'"
+        echo "too many arguments with option '--capsule'" >&2
         exit 1
     fi
 

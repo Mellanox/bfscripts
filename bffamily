@@ -31,6 +31,7 @@
 
 BF1_PLATFORM_ID=0x00000211
 BF2_PLATFORM_ID=0x00000214
+BF3_PLATFORM_ID=0x0000021c
 
 bfversion=$(bfhcafw mcra 0xf0014.0:16)
 
@@ -70,6 +71,18 @@ elif [ "$bfversion" = $BF2_PLATFORM_ID ]; then
         ["ZAM"]="699140280000"
     )
     PART_NUMBER=$(bfhcafw flint q full | grep "Part Number:" | cut -f 2 -d ":" | xargs)
+
+elif [ "$bfversion" = $BF3_PLATFORM_ID ]; then
+
+    # map product family names to an appropriate regular expressions
+    declare -A PRODUCT_FAMILY_MAP=(
+        ["EVB"]="MBF3-(DDR4-EVB|EVB-SKT|EVB)"
+	["Moonraker"]="(900-9D3(B|C)|SN37B36732|SN37B75411|8217991)"
+	["Goldeneye"]="900-9D3D"
+	["Roy"]="699-21014-0230"
+    )
+    PART_NUMBER=$(lspci -s "$(bfhcafw bus)" -vv | grep PN)
+
 else
     echo "Unknown platform"
     exit 1

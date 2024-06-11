@@ -32,11 +32,15 @@ TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 trap "rm -rf $TMP_DIR; exit 1" TERM INT
 
+# Build number to use in case it can't be retrieved from BFB.
+DEFAULT_BUILD_ID=999
+
 usage ()
 {
     cat <<EOF
 Usage: $PROGNAME [--help|-h]
        $PROGNAME [--part|-p PARTITIONS]
+       $PROGNAME [--file|-f FILE]
 
 Prints version information for currently installed software.
 
@@ -48,30 +52,111 @@ Options:
                          partition 0, and then partition 1. "-p1" will
                          print only partition 1. If -p is not specified,
                          the current primary partition will be printed.
+  --file,-f FILE         print BSP version information from a BFB file instead
+                         of what is installed.
 EOF
 }
 
-print_bootloader_ver () {
+print_path_vers () {
+    # Print the versions of an image at a given path.
+    # For any file, the versions contained in the BFB will be printed.
+    # For /dev/mmcblk0boot*, mlxbf-bootctl will be employed to read the
+    # partition.
+    STREAM_PATH="$1"
+
+    case $STREAM_PATH in
+        /dev/mmcblk0boot*) print_bfb_installed_vers "$STREAM_PATH";;
+        *)
+            if ! [ -e $STREAM_PATH ]; then
+                echo "$PROGNAME: warn: $STREAM_PATH does not exist, skipping" >&2
+            elif ! [ -f $STREAM_PATH ]; then
+                echo "$PROGNAME: warn: $STREAM_PATH is not file, skipping" >&2
+            else
+                print_bfb_file_vers "$STREAM_PATH"
+            fi
+            ;;
+    esac
+}
+
+print_bfb_installed_vers () {
     DEV_PATH=$1
     CURRENT_BFB="$TMP_DIR/$(basename $DEV_PATH).bfb"
 
     # Retrieve default.bfb from the eMMC
     mlxbf-bootctl -r "$DEV_PATH" -b "$CURRENT_BFB" 2>&1 >/dev/null
 
-    echo "--$DEV_PATH"
+    print_bfb_file_vers "$CURRENT_BFB" "$DEV_PATH"
+}
 
-    # Find and print the ATF version of current bfb
-    echo BlueField ATF version: "$(strings "$CURRENT_BFB" | grep -m 1 "(\(release\|debug\))")"
+print_bfb_file_vers () {
+    # Print versions stored in files.
+    BFB_PATH="$1"
 
-    # Find and print the UEFI of current bfb
-    echo BlueField UEFI version: "$(strings -e l "$CURRENT_BFB" | grep "BlueField" | cut -d':' -f 2)"
+    # Second argument is optional, specifies a display name for the file.
+    # Defaults to $1.
+    if [ -n "$2" ]; then
+        DISPLAY_NAME="$2"
+    else
+        DISPLAY_NAME="$BFB_PATH"
+    fi
+
+    echo "--$DISPLAY_NAME"
+
+    # Find and print the ATF version
+    echo BlueField ATF version: "$(strings "$BFB_PATH" | grep -m 1 "(\(release\|debug\))")"
+
+    # Keep UEFI version and use it to determine BSP version as well
+    UEFI_VER="$(strings -el "$BFB_PATH" | grep "BlueField" | cut -d':' -f 2)"
+
+    # The UEFI image may be compressed. If it is, decompress before searching
+    # for version strings
+    UEFI_IMAGE="$BFB_PATH"
+    if [ -z "$UEFI_VER" ]; then
+      mkdir "$TMP_DIR"/uefi
+      cd "$TMP_DIR"/uefi
+      mlx-mkbfb -x "$BFB_PATH"
+      gzipped=$(file dump-bl33-v0 | grep gzip)
+      if [ -n "$gzipped" ]; then
+        mv dump-bl33-v0 dump-bl33-v0.gz
+        gunzip dump-bl33-v0.gz
+        UEFI_VER="$(strings -el dump-bl33-v0 | grep "BlueField" | cut -d':' -f 2)"
+      else
+        echo "$PROGNAME: warn: UEFI image not compressed and no version info"
+      fi
+      UEFI_IMAGE=$(pwd)/dump-bl33-v0
+      cd - >/dev/null
+    fi
+
+    echo BlueField UEFI version: $UEFI_VER
+
+    # sed regex needs to be escaped heavily, so in more normal terms:
+    # (.+\..+\..+).*-[0-9]+-g[0-9a-fA-F]+
+    # Essentially, match the string as Major.Minor.Patch in front,
+    # the git describe tag from the back, and anything in the middle.
+    BSP_MAJOR_MINOR_PATCH="$(echo "$UEFI_VER" | sed 's/\(.\+\..\+\..\+\).*-[0-9]\+-g[0-9a-fA-F]\+/\1/')"
+
+    # Find build ID
+    BUILD_ID="$(strings -el "$UEFI_IMAGE" | grep "BId" | sed "s/^BId//")"
+
+    if [ -z "$BUILD_ID" ]; then
+        echo "$PROGNAME: warn: could not find UEFI build ID (likely bootloader too old, using placeholder value)" >&2
+        BUILD_ID="$DEFAULT_BUILD_ID"
+    fi
+
+    if [ "$BUILD_ID" = 0 ]; then
+        echo "$PROGNAME: warn: build id of 0 (likely development image)" >&2
+    fi
+
+    echo BlueField BSP version: ${BSP_MAJOR_MINOR_PATCH}.$BUILD_ID
+    echo
 }
 
 
-PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o hp: -l help,part: -- "$@")
+PARSED_OPTIONS=$(getopt -n "$PROGNAME" -o hp:f: -l help,part:,file: -- "$@")
 eval set -- "$PARSED_OPTIONS"
 
 PARTLIST=
+FILE=
 
 while true
 do
@@ -84,6 +169,10 @@ do
             PARTLIST="$2"
             shift 2
             ;;
+        -f | --file)
+            FILE="$2"
+            shift 2
+            ;;
         --)
             shift
             break
@@ -91,10 +180,17 @@ do
     esac
 done
 
+if [ -n "$FILE" ]; then
+    print_path_vers $FILE
+
+    # File mode, do not print any installation info
+    exit 0
+fi
+
 # Print bootloader versions
 if [ -z "$PARTLIST" ]; then
     # Identify current primary boot partition and print versions
-    print_bootloader_ver $(mlxbf-bootctl | grep "primary" | cut -d ' ' -f 2)
+    print_path_vers $(mlxbf-bootctl | grep "primary" | cut -d ' ' -f 2)
 else
     for part in $(echo $PARTLIST | cut -d"," -f1- --output-delimiter=" "); do
         if [ "$part" -ne 0 ] && [ "$part" -ne 1 ]; then
@@ -102,15 +198,15 @@ else
             continue
         fi
 
-        print_bootloader_ver /dev/mmcblk0boot$part
+        print_path_vers /dev/mmcblk0boot$part
     done
 fi
 
-echo
-
 # Print BlueField version number if Yocto version file is present
-if [ -e "/etc/bluefield_version" ]; then
-	echo BlueField Release Version: "$(cat /etc/bluefield_version)"
+if [ -e "/etc/mlnx-release" ]; then
+    echo OS Release Version: "$(cat /etc/mlnx-release)"
+elif [ -e "/etc/bluefield_version" ]; then
+	echo Yocto Release Version: "$(cat /etc/bluefield_version)"
 else
-	echo No Yocto version file present
+	echo No distribution version file present
 fi
