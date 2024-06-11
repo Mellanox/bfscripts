@@ -58,17 +58,22 @@ image_list = (
     ("psc-fw",    "PSC framework image",                  37),
     ("bl2r-cert", "RIoT Core (BL2R) content certificate",  31),
     ("bl2r",      "RIoT Core (BL2R) bin",                  30),
+    ("bl2r-auth-cert", "BL2R AUTHCERT DER-encoded certificate", 42),
     ("bl2-cert",  "Trusted Boot Firmware BL2 certificate", 6),
     ("bl2",       "Trusted Boot Firmware BL2 bin",         1),
     ("sys",       "Running system's part number or PSID",  29),
+    ("bl2-auth-cert", "BL2 AUTHCERT DER-encoded certificate", 43),
     ("ddr-cert",  "DDR Images Content Certificate",        38),
     ("ddr_ini", "File From Which Will Load DDR (pseudo spd) Parameters", 32),
     ("snps_images", "Combined SNPS Images for all DIMM types", 33),
+    ("ddr5_snps_images", "DDR5 Combined SNPS Images for all DIMM types", 40),
     ("ddr_ate_imem", "Analog Test Engine INSTRUCTIONS", 34),
     ("ddr_ate_dmem", "Analog Test Engine DATA", 35),
     ("bl30-key-cert", "SCP Firmware BL3-0 key certificate", 8),
     ("bl30-cert", "SCP Firmware BL3-0 certificate", 12),
     ("bl30", "SCP Firmware BL3-0", 2),
+    ("psc-app",   "PSC application image",                 39),
+    ("psc-certs", "PSC attestation certificates",          53),
     ("trusted-key-cert", "Trusted key certificate", 7),
     ("bl31-key-cert", "EL3 Runtime Firmware BL3-1 key certificate", 9),
     ("bl31-cert", "EL3 Runtime Firmware BL3-1 content certificate", 13),
@@ -89,9 +94,11 @@ image_list = (
     ("boot-args", "Arguments for boot image", 59),
     ("boot-timeout", "Boot menu timeout", 60),
     ("uefi-tests", "Specify what UEFI tests to run", 61),
+    ("dummy", "Dummy data for padding", 41),
     ("ramdisk", "RAM Disk image", 54),
     ("image", "Boot image", 62),
     ("initramfs", "In-memory filesystem", 63),
+    ("upgrade-image", "Runtime upgrade image", 51),
 )
 
 # Map command-line option to (description, image ID)
@@ -550,7 +557,7 @@ def make_stream(infnt, outfn, image_tuples, expert):
     outfile.close()
 
 
-def dump_stream(infn, do_dump, do_extract, prefix):
+def dump_stream(infn, do_dump, do_extract, prefix, image):
     """
     Dump a description of a boot stream.
 
@@ -587,9 +594,10 @@ def dump_stream(infn, do_dump, do_extract, prefix):
                 print("%10d %s" % (img.get_image_length(), desc))
 
         if do_extract:
-            xfile = open(prefix + fn, "wb")
-            xfile.write(img.get_bits())
-            xfile.close()
+            if not image or image == fn:
+                xfile = open(prefix + fn, "wb")
+                xfile.write(img.get_bits())
+                xfile.close()
 
     inf.close()
 
@@ -743,6 +751,10 @@ def main(argv):
             "-x", "--extract", dest="x", action="store_true",
             help="extract images from INFILE and write to files")
     parser.add_option(
+            "-n", "--image-name", dest="n", action="store", type="string",
+            metavar="INM", default="",
+            help="image name to extract (used with -x option); ")
+    parser.add_option(
             "-p", "--prefix", dest="p", action="store", type="string",
             metavar="PFX", default="dump-",
             help="prefix for files containing extracted images; "
@@ -814,7 +826,7 @@ def main(argv):
             parser.error("cannot specify images with -d/-x/-s")
 
     if opt.d or opt.x:
-        dump_stream(args[0], opt.d, opt.x, opt.p)
+        dump_stream(args[0], opt.d, opt.x, opt.p, opt.n)
     elif opt.f is not None:
         if len(args) != 2:
             parser.error("--filter/-f: must specify exactly one input file and "

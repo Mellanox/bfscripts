@@ -1,0 +1,4 @@
+bfacpievt bfbootmgr bfcfg bfcpu-freq bfdracut bffamily bfgrubcheck bfinst bfup bftraining_results usr/bin/
+bfpart bfperf_pmc bfpxe bfrec bfrshlog bfsbdump bfsbkeys bfsbverify bfvcheck bfver mlx-mkbfb bfhcafw usr/bin/
+bfvcheck.service bfup.service lib/systemd/system/
+mlx-uefi.quirk usr/share/fwupd/quirks.d/

@@ -11,9 +11,11 @@ if which deb-systemd-helper >/dev/null 2>/dev/null; then
 	fi
 
 	deb-systemd-helper "$OPTS" enable bfvcheck.service
+	deb-systemd-helper "$OPTS" enable bfup.service
 
 	if [ -z "$D" ]; then
 		deb-systemd-helper restart bfvcheck.service
+		deb-systemd-helper restart bfup.service
 	fi
 fi
 

@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+
+# Copyright (c) 2023 NVIDIA Corporation.  All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# The views and conclusions contained in the software and documentation are those
+# of the authors and should not be interpreted as representing official policies,
+# either expressed or implied, of the FreeBSD Project.
+
+"""
+Dump BlueField secure boot status information.
+"""
+
+import argparse
+import struct
+import binascii
+import os
+import sys
+
+LifeCycleState = [ 'Production', 'Secure', 'Non-Secure', 'RMA' ]
+
+# Figure out which platform searching for an ACPI table specific to the BF version
+def GetPlatformName():
+    if os.popen('hexdump -C /sys/firmware/acpi/tables/SSDT* | grep MLNXBF02').read():
+        return 'BlueField1'
+    elif os.popen('hexdump -C /sys/firmware/acpi/tables/SSDT* | grep MLNXBF22').read():
+        return 'BlueField2'
+    elif os.popen('hexdump -C /sys/firmware/acpi/tables/SSDT* | grep MLNXBF33').read():
+        return 'BlueField3'
+    else:
+        print('Error! can not read platform name', file=sys.stderr)
+        sys.exit (1)
+
+def CountSetBits(n):
+    return bin(n).count("1")
+
+def GetEcid():
+    str = os.popen('xxd -p /sys/firmware/acpi/tables/SSDT1 2>/dev/null | tr -d "\\n"').readline()
+    pos1 = str.find('656369643031000e')
+    pos2 = str.find('656369643233000e')
+    if (pos1 >= 0) and (pos2 >= 0):
+        return (str[pos1+16:pos1+32]) + str[pos2+16:pos2+32]
+    else:
+        return ""
+
+class ChipSecureBootStatus:
+
+    def __init__(self):
+        self.PlatformName = GetPlatformName()
+        self.ecid = GetEcid()
+
+    def Decode(self, data):
+        __StructFormat = '<I32sIHHBBBBB??B?15s'
+        __StructSize = struct.calcsize(__StructFormat)
+        if __StructSize != len(data):
+            print('Error! bad size {}, expected size {}'.format(__StructSize, len(data)), file=sys.stderr)
+            sys.exit (1)
+
+        '''
+        Defined C structure which encapsulates the BlueField Secure Boot
+        status information.
+
+        typedef struct {
+        UINT64  DotChipId[4];
+        UINT32  DotFsblVersion;
+        UINT16  DotMonotonicCounter;
+        UINT16  RevMonotonicCounter;
+        UINT8   TrustedBootFwNonVolatileCounter;
+        UINT8   UntrustedBootFwNonVolatileCounter;
+        UINT8   CerberusNonVolatileCounter;
+        UINT8   NvProductionStatus;
+        UINT8   LifeCycleStatus;
+        BOOLEAN SecureBootEnabled;
+        BOOLEAN SecureBootEnabledWithDevKey;
+        UINT8   SecureBootKeyStatus;
+        BOOLEAN CryptoEnabled;
+        UINT8   Reserved[15];
+        } CHIP_SECURE_BOOT_STATUS;
+        '''
+        (self.__hdr,
+            self.DotChipId,
+            self.DotFsblVersion,
+            self.DotMonotonicCounter,
+            self.RevMonotonicCounter,
+            self.TrustedBootFwNonVolatileCounter,
+            self.UntrustedBootFwNonVolatileCounter,
+            self.CerberusNonVolatileCounter,
+            self.NvProduction,
+            self.LifeCycle,
+            self.SecureBootEnabled,
+            self.SecureBootEnabledWithDevKey,
+            self.SecureBootKeyStatus,
+            self.CryptoEnabled,
+            self.Reserved) = struct.unpack(__StructFormat, data)
+    
+    def Dump(self):
+        if self.LifeCycle > 3:
+            print('Error! bad life cycle state {:02X}, expected {:02X}, {:02X}, {:02X}, or {:02X}'.format(
+                    self.LifeCycle, 0, 1, 2, 3 ), file=sys.stdout)
+            sys.exit(1)
+
+        print('')
+        print(' ' + self.PlatformName)
+        print('----------------------')
+        if self.PlatformName == 'BlueField3':
+            print('NV Production        : ' + str(self.NvProduction))
+        print('Arm Life Cycle       : ' + str(LifeCycleState[self.LifeCycle]))
+        print('Secure Boot          : Enabled' if self.SecureBootEnabled else
+              'Secure Boot          : Disabled')
+        if self.SecureBootEnabled:
+            print('Secure Boot Key      : Development' if self.SecureBootEnabledWithDevKey else
+                  'Secure Boot Key      : Production')
+            print('Secure Boot Key Valid: ' + str(CountSetBits((self.SecureBootKeyStatus >> 4) & 0xf)))
+            print('Secure Boot Key Count: ' + str(CountSetBits(self.SecureBootKeyStatus & 0xf)))
+        print('Crypto               : Enabled' if self.CryptoEnabled else 
+              'Crypto               : Disabled')
+        print('Trusted FW counter   : ' + str(self.TrustedBootFwNonVolatileCounter))
+        print('Untrusted FW counter : ' + str(self.UntrustedBootFwNonVolatileCounter))
+        if self.PlatformName == 'BlueField2':
+            print('Cerberus counter     : ' + str(self.CerberusNonVolatileCounter))
+        if self.PlatformName != 'BlueField1' :
+            print('REVMC                : ' + str(self.RevMonotonicCounter))
+            print('DOTMC                : ' + str(self.DotMonotonicCounter))
+            print('DOT FSBL Version     : {a}.{b}.{c}.{d}'.format (
+                a = (self.DotFsblVersion >>  0) & 0xFF, b = (self.DotFsblVersion >>  8) & 0xFF,
+                c = (self.DotFsblVersion >> 16) & 0xFF, d = (self.DotFsblVersion >> 24) & 0xFF ))
+        print('DOT ID               : ' + str(binascii.hexlify(self.DotChipId).decode('ascii')))
+        if self.ecid:
+            print('ECID                 : ' + self.ecid)
+        print('----------------------')
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Dump BlueField platform secure boot status information.")
+    options = parser.parse_args()
+
+    '''
+    Initially BfSbStatus EFI variable is created using the EFI Global Variable GUID which
+    is not platform specific and might cause confusions among variables managed by common
+    drivers and variables managed by the platform drivers. Thus, a platform GUID has been
+    introduced and as a result the EFI Variable file name in efivar file system must match
+    the current GUID used to create the variable.
+    '''
+    if os.path.exists("/sys/firmware/efi/efivars/BfSbStatus-8be4df61-93ca-11d2-aa0d-00e098032b8c"):
+        EfiVar="/sys/firmware/efi/efivars/BfSbStatus-8be4df61-93ca-11d2-aa0d-00e098032b8c"
+    else:
+        EfiVar="/sys/firmware/efi/efivars/BfSbStatus-487ff588-fb71-4b19-9100-ebe067aa1af0"
+
+    if os.path.exists(EfiVar):
+        with open(EfiVar, "rb") as var:
+            Data = var.read()
+
+        Sb = ChipSecureBootStatus()
+        Sb.Decode(Data)
+        Sb.Dump()
+
+    else:
+        print('Error! cannot find EFI variable', file=sys.stderr)
+        sys.exit(1)
+

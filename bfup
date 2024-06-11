@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright (c) 2017, Mellanox Technologies
+# Copyright (c) 2023, Mellanox Technologies
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -27,4 +27,14 @@
 # of the authors and should not be interpreted as representing official policies,
 # either expressed or implied, of the FreeBSD Project.
 
-echo "core freq =" `dmidecode -s processor-frequency`
+/usr/bin/bfrshlog "Linux up"
+/usr/bin/bfrshlog "DPU is ready"
+
+os_up_path="/sys/devices/platform/MLNXBF04:00/driver/os_up"
+if [ ! -e "${os_up_path}" ]; then
+  os_up_path="/sys/devices/platform/MLNXBF04:00/os_up"
+fi
+
+[ ! -e "${os_up_path}" ] && exit
+
+echo 1 > "${os_up_path}"

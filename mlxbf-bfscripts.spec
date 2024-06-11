@@ -28,6 +28,7 @@ Requires: pciutils
 Requires: util-linux
 Requires: binutils
 Requires: systemd
+Requires: gzip
 
 %description
 Useful scripts for managing Mellanox BlueField hardware.
@@ -57,16 +58,24 @@ install -p bfdracut          %{installdir}
 install -p man/bfdracut.8    %{man8dir}
 install -p bffamily          %{installdir}
 install -p man/bffamily.8    %{man8dir}
+install -p bfgrubcheck       %{installdir}
+install -p man/bfgrubcheck.8 %{man8dir}
 install -p bfinst            %{installdir}
 install -p man/bfinst.8      %{man8dir}
 install -p bfpxe             %{installdir}
 install -p man/bfpxe.8       %{man8dir}
+install -p bfperf_pmc    %{installdir}
+install -p man/bfperf_pmc.8 %{man8dir}
 install -p bfrec             %{installdir}
 install -p man/bfrec.8       %{man8dir}
 install -p bfrshlog          %{installdir}
 install -p man/bfrshlog.8    %{man8dir}
+install -p bfsbdump          %{installdir}
+install -p man/bfsbdump.8    %{man8dir}
 install -p bfsbkeys          %{installdir}
 install -p man/bfsbkeys.8    %{man8dir}
+install -p bfsbverify        %{installdir}
+install -p man/bfsbverify.8  %{man8dir}
 install -p bfvcheck          %{installdir}
 install -p man/bfvcheck.8    %{man8dir}
 install -p bfver             %{installdir}
@@ -77,15 +86,20 @@ install -p bfgrubcheck       %{installdir}
 install -p man/bfgrubcheck.8 %{man8dir}
 install -p bfhcafw           %{installdir}
 install -p man/bfhcafw.8     %{man8dir}
-
+install -p bfup              %{installdir}
+install -p man/bfup.8        %{man8dir}
 install -p mlx-mkbfb       %{installdir}
 install -p man/mlx-mkbfb.1 %{man1dir}
+install -p bftraining_results %{installdir}
+install -p man/bftraining_results.8 %{man8dir}
 
 install -p -d %{buildroot}%{_unitdir}
 install -p bfvcheck.service %{buildroot}%{_unitdir}/
+install -p bfup.service %{buildroot}%{_unitdir}/
 
 install -p -d %{buildroot}%{_presetdir}
 install -p 80-bfvcheck.preset %{buildroot}%{_presetdir}/
+install -p 80-bfup.preset %{buildroot}%{_presetdir}/
 
 # Install tweak for fwupd on BlueField
 %global fwupdquirkdir %{buildroot}%{_datadir}/fwupd/quirks.d
@@ -94,12 +108,15 @@ install -p mlx-uefi.quirk %{fwupdquirkdir}/
 
 %post
 %systemd_post bfvcheck.service
+%systemd_post bfup.service
 
 %preun
 %systemd_preun bfvcheck.service
+%systemd_preun bfup.service
 
 %postun
 %systemd_postun bfvcheck.service
+%systemd_postun bfup.service
 
 %files
 %license LICENSE
@@ -108,7 +125,9 @@ install -p mlx-uefi.quirk %{fwupdquirkdir}/
 %attr(644, root, root) %{_mandir}/man1/*
 %attr(644, root, root) %{_mandir}/man8/*
 %attr(644, root, root) %{_unitdir}/bfvcheck.service
+%attr(644, root, root) %{_unitdir}/bfup.service
 %attr(644, root, root) %{_presetdir}/80-bfvcheck.preset
+%attr(644, root, root) %{_presetdir}/80-bfup.preset
 %attr(644, root, root) %{_datadir}/fwupd/quirks.d/mlx-uefi.quirk
 
 %doc README.md

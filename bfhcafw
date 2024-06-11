@@ -1,4 +1,4 @@
-#!/bin/sh -e
+#!/bin/sh
 
 # Copyright (c) 2020, Mellanox Technologies
 # All rights reserved.
@@ -54,6 +54,8 @@ mcra    Similar to flint, automatically selects binary and PCI conf path to
         run mcra.
 
 bus     Prints the PCI bus number for the ConnectX interface.
+
+Set the environment variable VERBOSE=1 to see more detailed output.
 EOF
 }
 
@@ -61,10 +63,13 @@ err () {
     echo "bfhcafw: $@" >&2
 }
 
-BASE_FW_NAME=mlxfwmanager_sriov_dis_aarch64
+debug () {
+    if [ -n "$VERBOSE" ]; then
+        echo "bfhcafw: debug: $@" >&2
+    fi
+}
 
-CHIPNUM_BF1=41682
-CHIPNUM_BF2=41686
+BASE_FW_NAME=mlxfwmanager_sriov_dis_aarch64
 
 get_chipnum () {
     if ! [ -e /sys/firmware/acpi/tables ]; then
@@ -72,49 +77,77 @@ get_chipnum () {
         exit 1
     fi
 
-    # Only two HW revs right now
-    # Figure out which rev by searching for an ACPI table that's only present
-    # on BF2
-    if hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF22; then
-        # BF2
-        chipnum=41686
-    else
+    # Figure out which rev by searching for an ACPI table specific to the BF version
+    if hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF02; then
         # BF1
         chipnum=41682
+    elif hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF22; then
+        # BF2
+        chipnum=41686
+    elif hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF33; then
+        # BF3
+        chipnum=41692
     fi
 
     echo $chipnum
 }
 
-# Set mlxfw filename based on current system
-set_mlxfw_name () {
-    mlxfw_name="${BASE_FW_NAME}_$(get_chipnum)"
+# Get the mlxfw filename based on current system and a specified base name
+# and separator.
+get_mlxfw_name () {
+    # $1 - Base filename
+    # $2 - Separator
+
+    echo "$1$2$(get_chipnum)"
 }
 
-# Finds the FW file on the system and sets $mlxfw accordingly.
-# Returns 1 if not found, 0 otherwise.
+# Search for FW file of a given filename in known locations
 find_fw_with_name () {
-    # find the firmware package on the system
-    mlxfw="/opt/mellanox/mlnx-fw-updater/firmware/${mlxfw_name}"
-    [ -f $mlxfw ] && return 0
+    # $1 - FW updater filename
 
-    # FW package not in /opt/mellanox, we're probably running on yocto
-    mlxfw="/lib/firmware/mellanox/${mlxfw_name}"
-    [ -f $mlxfw ] && return 0
+    # Ubuntu location
+    mlxfw="/opt/mellanox/mlnx-fw-updater/firmware/$1"
+    debug "searching $mlxfw"
+    if [ -f $mlxfw ]; then echo $mlxfw; return 0; fi
+
+    # Yocto location
+    mlxfw="/lib/firmware/mellanox/$1"
+    debug "searching $mlxfw"
+    if [ -f $mlxfw ]; then echo $mlxfw; return 0; fi
+
+    return 1
+}
+
+# Search for FW file with given basename, automatically adding the chip number
+# based on current hardware.
+find_fw_with_basename () {
+    # $1 - FW Base name
+
+    result=$(find_fw_with_name $(get_mlxfw_name "$1" -))
+    if [ $? -eq 0 ]; then echo $result; return 0; fi
+
+    # Need to try with _ as separator too, some older distributions use
+    # _ instead of -
+    result=$(find_fw_with_name $(get_mlxfw_name "$1" _))
+    if [ $? -eq 0 ]; then echo $result; return 0; fi
 
     return 1
 }
 
 find_fw () {
-    if set_mlxfw_name; then
-        # If name set succeeds, we try once with the new name, and then if that
-        # doesn't work, continue to legacy check.
-        find_fw_with_name && return 0
-    fi
+    # First search using new filename, with the _fw suffix.
+    fw_path="$(find_fw_with_basename ${BASE_FW_NAME}_fw)"
+    if [ $? -eq 0 ]; then echo $fw_path; return 0; fi
 
+    # If that doesn't work, search for the old filename
+    fw_path="$(find_fw_with_basename $BASE_FW_NAME)"
+    if [ $? -eq 0 ]; then echo $fw_path; return 0; fi
+
+    # Very old software that only supports BF1 does not specify chip number,
+    # instead just using the base name directly.
     err "warn: falling back to legacy FW filename"
-    mlxfw_name="$BASE_FW_NAME"
-    find_fw_with_name && return 0
+    fw_path="$(find_fw_with_name $BASE_FW_NAME)"
+    if [ $? -eq 0 ]; then echo $fw_path; return 0; fi
 
     return 1
 }
@@ -166,8 +199,9 @@ if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
 fi
 
 if [ "$1" = "find" ]; then 
-    if find_fw; then
-        echo "$mlxfw"
+    fw_path=$(find_fw)
+    if [ $? -eq 0 ]; then
+        echo "$fw_path"
         exit 0
     else
         err "err: the firmware package could not be located"

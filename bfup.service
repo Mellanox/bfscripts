@@ -1,10 +1,10 @@
 [Unit]
-Description=Firmware and bootloader version check for Bluefield
+Description=Indicates that Linux is up
 After=getty.target
 
 [Service]
 Type=idle
-ExecStart=/usr/bin/bfvcheck
+ExecStart=/usr/bin/bfup
 StandardOutput=journal+console
 
 [Install]
