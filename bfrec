@@ -107,7 +107,7 @@ fi
 # Only allow capsule when secure boot is enabled.
 if [ -n "$bootctl_mode" ]; then
     if [ -n "$secure_boot" ]; then
-        echo "ERROR: need to use capsule in secure boot mode" >&2
+        echo "ERROR: need to use capsule when UEFI secure boot PK key is enrolled" >&2
         exit 1
     fi
 
