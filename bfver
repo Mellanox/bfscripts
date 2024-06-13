@@ -140,8 +140,10 @@ print_bfb_file_vers () {
       rm -rf "$TMP_DIR"/uefi
     fi
 
-    # Find build ID
-    BUILD_ID="$(strings -el "$UEFI_IMAGE" | grep "BId" | sed "s/^BId//")"
+    # Find build ID. Note that when locating strings in the UEFI_IMAGE binary it's possible that
+    # the BId string can contain extra characters before and after the build ID that need to be
+    # cut out. This sed regex takes only the numbers directly following "BId".
+    BUILD_ID="$(strings -el "$UEFI_IMAGE" | grep "BId" | sed "s/.*BId\([0-9]*\).*/\1/")"
 
     if [ -z "$BUILD_ID" ]; then
         echo "$PROGNAME: warn: could not find UEFI build ID (likely bootloader too old, using placeholder value)" >&2
