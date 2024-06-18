@@ -40,11 +40,11 @@ LifeCycleState = [ 'Production', 'Secure', 'Non-Secure', 'RMA' ]
 
 # Figure out which platform searching for an ACPI table specific to the BF version
 def GetPlatformName():
-    if os.popen('hexdump -C /sys/firmware/acpi/tables/SSDT* | grep MLNXBF02').read():
+    if os.popen('strings /sys/firmware/acpi/tables/SSDT* | grep MLNXBF02').read():
         return 'BlueField1'
-    elif os.popen('hexdump -C /sys/firmware/acpi/tables/SSDT* | grep MLNXBF22').read():
+    elif os.popen('strings /sys/firmware/acpi/tables/SSDT* | grep MLNXBF22').read():
         return 'BlueField2'
-    elif os.popen('hexdump -C /sys/firmware/acpi/tables/SSDT* | grep MLNXBF33').read():
+    elif os.popen('strings /sys/firmware/acpi/tables/SSDT* | grep MLNXBF33').read():
         return 'BlueField3'
     else:
         print('Error! can not read platform name', file=sys.stderr)
