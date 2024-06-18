@@ -78,13 +78,13 @@ get_chipnum () {
     fi
 
     # Figure out which rev by searching for an ACPI table specific to the BF version
-    if hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF02; then
+    if strings /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF02; then
         # BF1
         chipnum=41682
-    elif hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF22; then
+    elif strings /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF22; then
         # BF2
         chipnum=41686
-    elif hexdump -C /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF33; then
+    elif strings /sys/firmware/acpi/tables/SSDT* | grep -q MLNXBF33; then
         # BF3
         chipnum=41692
     fi
