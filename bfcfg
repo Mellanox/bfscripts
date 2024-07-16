@@ -32,11 +32,22 @@ true
 
 ${BFDBG}
 
+TMP_DIR=$(mktemp -d)
+trap "rm -rf $TMP_DIR" EXIT
+trap "rm -rf $TMP_DIR; exit 1" TERM INT
+
 bfcfg_version=4.0
 bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
-dump_mode=0
+
+# Config dump levels (the higher the number the more information is dumped).
+# dump_level defaults to an empty string and is set based on bfcfg input arguments.
+DUMP_LEVEL_NONE=0
+DUMP_LEVEL_DEFAULT=1
+DUMP_LEVEL_EXTRA=2
+DUMP_LEVEL_MAX=${DUMP_LEVEL_EXTRA}
+dump_level=
 
 mlxmkcap=/lib/firmware/mellanox/boot/capsule/scripts/mlx-mkcap
 
@@ -44,12 +55,18 @@ bfcf_acpi_table=/sys/firmware/acpi/tables/BFCF
 efivars=/sys/firmware/efi/efivars
 sys_cfg_sysfs=${efivars}/BfSysCfg-9c759c02-e5a3-45e4-acfc-c34a500628a6
 redfish_cfg_sysfs=${efivars}/BfRedfish-ce3e5882-6770-4d5e-aa45-90f909da2446
+redfish_state_cfg_sysfs=${efivars}/BfRedfishState-ce3e5882-6770-4d5e-aa45-90f909da2446
+sb_state_sysfs=${efivars}/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c
+sb_setup_mode_sysfs=${efivars}/SetupMode-8be4df61-93ca-11d2-aa0d-00e098032b8c
 efi_global_var_guid=8be4df61-93ca-11d2-aa0d-00e098032b8c
 efi_bfcfg_var_guid=487ff588-fb71-4b19-9100-ebe067aa1af0
 efi_vlan_var_guid=9e23d768-d2f3-4366-9fc3-3a7aba864374
 rshim_efi_mac_sysfs=${efivars}/RshimMacAddr-${efi_global_var_guid}
 pxe_dhcp_class_id_sysfs=${efivars}/DhcpClassId-${efi_global_var_guid}
 bf_bundle_version_sysfs=${efivars}/BfBundleVer-${efi_bfcfg_var_guid}
+sb_custom_mode_sysfs=${efivars}/BfCfgSbCustomMode-${efi_bfcfg_var_guid}
+pass_settings_sysfs=${efivars}/BfCfgPassSettings-${efi_bfcfg_var_guid}
+bf_modes_sysfs=${efivars}/BfCfgBfModes-${efi_bfcfg_var_guid}
 
 mfg_sysfs_dir=/sys/bus/platform/devices/MLNXBF04:00/driver
 if [ ! -e $mfg_sysfs_dir/oob_mac ]; then
@@ -75,7 +92,7 @@ delete_efi_var()
 {
   local in_efivarfs=$1
 
-  [ ${dump_mode} -eq 1 ] && return
+  [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ] && return
 
   if [ -e "${in_efivarfs}" ]; then
     log_msg "mfg: delete ${in_efivarfs}"
@@ -99,7 +116,7 @@ mfg_reset_deps()
 
 mfg_sysfs_cfg()
 {
-  local tmp_file=/tmp/.bfcfg-mfg-data
+  local tmp_file=${TMP_DIR}/.bfcfg-mfg-data
   local opn_sysfs=${mfg_sysfs_dir}/opn
   local sku_sysfs=${mfg_sysfs_dir}/sku
   local modl_sysfs=${mfg_sysfs_dir}/modl
@@ -109,7 +126,7 @@ mfg_sysfs_cfg()
   local oob_efi_mac_sysfs=${efivars}/OobMacAddr-${efi_global_var_guid}
   local mac_err opn_err mac
 
-  [ $dump_mode -eq 1 ] && return
+  [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ] && return
 
   if [ -z "${MFG_OOB_MAC}" ] || [ -z "${MFG_OPN}" ] || [ -z "${MFG_SKU}" ] ||
      [ -z "${MFG_MODL}" ] || [ -z "${MFG_SN}" ] || [ -z "${MFG_UUID}" ] ||
@@ -234,7 +251,7 @@ mfg_cfg_set_bytes()
   local size=$4
   local value=$5
 
-  [ ${dump_mode} -eq 1 ] && return
+  [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ] && return
 
   if [ -n "${value}" ] && [ -f "${out_file}" ]; then
     # Most of the fields are of type strings, thus check the number
@@ -268,7 +285,7 @@ copy_efi_var_data()
   local offset=$3
   local size=$4
 
-  [ ${dump_mode} -eq 1 ] && return
+  [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ] && return
 
   if [ -e "${in_efivarfs}" ] && [ -f "${out_file}" ]; then
     chattr -i ${in_efivarfs}
@@ -294,7 +311,7 @@ mfg_cfg_set_bf_modes()
   local value=$5
   local bin_value
 
-  [ ${dump_mode} -eq 1 ] && return
+  [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ] && return
 
   if [ -z "${value}" ] || [ ! -f "${out_file}" ]; then
     return
@@ -490,10 +507,10 @@ mfg_cfg_bin_to_cap()
 
 mfg_cap_cfg()
 {
-  local bin_file=/tmp/.bfcfg-mfg.bin
-  local cap_file=/tmp/.bfcfg-mfg.cap
+  local bin_file=${TMP_DIR}/.bfcfg-mfg.bin
+  local cap_file=${TMP_DIR}/.bfcfg-mfg.cap
 
-  [ $dump_mode -eq 1 ] && return
+  [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ] && return
 
   mfg_cfg_bin_to_cap ${bin_file} ${cap_file}
   has_cap=0
@@ -570,7 +587,7 @@ mfg_cfg()
 
 
 
-  if [ $dump_mode -eq 1 ]; then
+  if [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ]; then
     # W/A: always read the OOB MAC from kernel sysfs.
     # Note: The 'BfCfgOobMac' EFI variable might contain incorrect
     #       OOB MAC.
@@ -598,7 +615,7 @@ mfg_cfg()
 
 icm_cfg()
 {
-  if [ $dump_mode -eq 1 ]; then
+  if [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ]; then
     [ -e "${large_icm_sysfs}" ] && echo "icm: LARGE_ICM_SIZE=$(cat ${large_icm_sysfs} 2>/dev/null)"
     return
   fi
@@ -618,7 +635,7 @@ icm_cfg()
 }
 
 #
-# Set a value at the specified offset in a file.
+# Set or dump a value at the specified offset in a file.
 #
 sys_cfg_one_byte()
 {
@@ -628,7 +645,7 @@ sys_cfg_one_byte()
   local value=$4
   local bin_value
 
-  if [ ${dump_mode} -eq 1 ]; then
+  if [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ]; then
     value=0
     if [ -e ${tmp_file} ]; then
       value=$(hexdump -s "${offset}" -n 1 -e '/1 "%d" "\n"' "${tmp_file}")
@@ -646,6 +663,115 @@ sys_cfg_one_byte()
     has_change=1
     log_msg "sys: ${name}=${value}"
   fi
+}
+
+#
+# Dump a multi-byte value at the specified offset in a file.
+#
+sys_cfg_multi_byte()
+{
+  local tmp_file=$1
+  local name=$2
+  local offset=$3
+  local num_bytes=$4
+  local value=$5
+
+  if [ ${dump_level} -eq ${DUMP_LEVEL_NONE} ]; then
+    return
+  fi
+
+  value=0
+  if [ -e ${tmp_file} ]; then
+    value=$(hexdump -s "${offset}" -n "${num_bytes}" -e '"0x%X" "\n"' "${tmp_file}")
+  fi
+  echo "sys: ${name}=${value}"
+}
+
+#
+# This function reads the BfModes EFI struct from a UEFI variable directly.
+# Below are the offsets defined in UEFI which is 4(fixed header) plus the offset
+# of the variable within the BfModes struct. These offsets are not supposed to
+# change in order to be backward compatible with previous releases.
+#   VARIABLE(Name)       OFFSET(Byte)  SIZE(Byte)
+#   INTERNAL_CPU_MODEL        4            1
+#   HOST_PRIV_LEVEL           5            1
+#   NIC_MODE                  6            1
+#
+sysfs_dump_bf_modes()
+{
+  local tmp_file=${TMP_DIR}/.bfcfg-bfmodes-data
+  local internal_cpu_model internal_cpu_model_str
+  local host_priv_level host_priv_level_str
+  local nic_mode nic_mode_str
+
+  if [ ${dump_level} -eq ${DUMP_LEVEL_NONE} ]; then
+    return
+  fi
+
+  if [ ! -e "${bf_modes_sysfs}" ]; then
+    log_msg "misc: failed to find the ${bf_modes_sysfs} EFI variable"
+    return
+  fi
+
+  # shellcheck disable=SC2216
+  yes | cp -f ${bf_modes_sysfs} ${tmp_file}
+  internal_cpu_model=$(hexdump -s 4 -n 1 -e '/1 "%d" "\n"' ${tmp_file})
+
+  # shellcheck disable=SC2216
+  yes | cp -f ${bf_modes_sysfs} ${tmp_file}
+  host_priv_level=$(hexdump -s 5 -n 1 -e '/1 "%d" "\n"' ${tmp_file})
+
+  # shellcheck disable=SC2216
+  yes | cp -f ${bf_modes_sysfs} ${tmp_file}
+  nic_mode=$(hexdump -s 6 -n 1 -e '/1 "%d" "\n"' ${tmp_file})
+
+  if [ "${internal_cpu_model}" -eq 0 ]; then
+    internal_cpu_model_str="SEPARATED"
+  elif [ "${internal_cpu_model}" -eq 1 ]; then
+    internal_cpu_model_str="EMBEDDED"
+  else
+    internal_cpu_model_str="UNKNOWN"
+  fi
+
+  if [ "${host_priv_level}" -eq 0 ]; then
+    host_priv_level_str="PRIVILEGED"
+  elif [ "${host_priv_level}" -eq 1 ]; then
+    host_priv_level_str="RESTRICTED"
+  else
+    host_priv_level_str="UNKNOWN"
+  fi
+
+  if [ "${nic_mode}" -eq 0 ]; then
+    nic_mode_str="DPU_MODE"
+  elif [ "${nic_mode}" -eq 1 ]; then
+    nic_mode_str="NIC_MODE"
+  else
+    nic_mode_str="UNKNOWN"
+  fi
+
+  echo "misc: INTERNAL_CPU_MODEL=${internal_cpu_model_str}"
+  echo "misc: HOST_PRIV_LEVEL=${host_priv_level_str}"
+  echo "misc: NIC_MODE=${nic_mode_str}"
+}
+
+sysfs_dump_pass_settings()
+{
+  local tmp_file=${TMP_DIR}/.bfcfg-pass-settings
+  local default_pass_policy
+
+  if [ ${dump_level} -eq ${DUMP_LEVEL_NONE} ]; then
+    return
+  fi
+
+  if [ ! -e "${pass_settings_sysfs}" ]; then
+    log_msg "misc: failed to find the ${pass_settings_sysfs} EFI variable"
+    return
+  fi
+
+  # shellcheck disable=SC2216
+  yes | cp -f ${pass_settings_sysfs} ${tmp_file}
+  default_pass_policy=$(hexdump -s 4 -n 1 -e '/1 "%d" "\n"' ${tmp_file})
+  echo "misc: UEFI_DEFAULT_PASS_POLICY_ENABLE=${default_pass_policy}"
 }
 
 #
@@ -675,7 +801,7 @@ sys_cfg_one_byte()
 #
 sys_cfg()
 {
-  local tmp_file=/tmp/.bfcfg-sysfs-data
+  local tmp_file=${TMP_DIR}/.bfcfg-sysfs-data
 
   has_sys_cfg=0
 
@@ -699,7 +825,10 @@ sys_cfg()
   sys_cfg_one_byte ${tmp_file} "ENABLE_I2C0" 36 "${SYS_ENABLE_I2C0}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_FORCE_PXE_RETRY" 37 "${SYS_DISABLE_FORCE_PXE_RETRY}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_BMC_FIELD_MODE" 38 "${SYS_ENABLE_BMC_FIELD_MODE}"
+  sys_cfg_multi_byte ${tmp_file} "LARGE_ICMC_SIZE" 39 4 "${SYS_LARGE_ICMC_SIZE}"
+  sys_cfg_multi_byte ${tmp_file} "CE_THRESHOLD" 45 4 "${SYS_CE_THRESHOLD}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_HEST" 49 "${SYS_DISABLE_HEST}"
+  sys_cfg_multi_byte ${tmp_file} "L3_CACHE_PART_LEVEL" 50 2 "${SYS_L3_CACHE_PART_LEVEL}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_I2C3" 52 "${SYS_ENABLE_I2C3}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_FORCE_BOOT_RETRY" 53 "${SYS_ENABLE_FORCE_BOOT_RETRY}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_OEM_MFG_CONFIG" 54 "${SYS_ENABLE_OEM_MFG_CONFIG}"
@@ -717,6 +846,38 @@ sys_cfg()
 }
 
 #
+# This function reads the BfRedfishState UEFI variable directly.
+# Below are the offsets defined in UEFI which is 4(fixed header) plus the offset
+# of the variable within the BfRedfish struct. These offsets are not supposed to
+# change in order to be backward compatible with previous releases.
+#   VARIABLE(Name)       OFFSET(Byte)  SIZE(Byte)
+#   CFG_SKIP_REDFISH        4            1
+#
+sys_redfish_cfg_dump()
+{
+  local tmp_file=${TMP_DIR}/.bfcfg-redfishfs-state-data
+
+  if [ ${dump_level} -eq ${DUMP_LEVEL_NONE} ]; then
+    return
+  fi
+
+  if [ ! -e "${redfish_state_cfg_sysfs}" ]; then
+    log_msg "sys: failed to find the ${redfish_state_cfg_sysfs} EFI variable"
+    return
+  fi
+
+  # shellcheck disable=SC2216
+  yes | cp -f ${redfish_state_cfg_sysfs} ${tmp_file}
+  has_change=0
+
+  sys_cfg_one_byte ${tmp_file} "SKIP_REDFISH" 4 "${SYS_SKIP_REDFISH}"
+
+  if [ ${has_change} -eq 1 ]; then
+    log_msg "sys: changes to volatile ${redfish_state_cfg_sysfs} EFI variable will not take effect"
+  fi
+}
+
+#
 # This function writes to the BfRedfish UEFI variable directly.
 # Below are the offsets defined in UEFI which is 4(fixed header) plus the offset
 # of the variable within the BfRedfish struct. These offsets are not supposed to
@@ -727,7 +888,11 @@ sys_cfg()
 #
 sys_redfish_cfg()
 {
-  local tmp_file=/tmp/.bfcfg-redfishfs-data
+  local tmp_file=${TMP_DIR}/.bfcfg-redfishfs-data
+
+  if [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ]; then
+    sys_redfish_cfg_dump
+  fi
 
   has_redfish_cfg=0
 
@@ -756,9 +921,13 @@ sys_redfish_cfg()
 misc_cfg()
 {
   local mac value
-  local tmp_file=/tmp/.bfcfg-misc-data
+  local tmp_file=${TMP_DIR}/.bfcfg-misc-data
 
-  if [ $dump_mode -eq 1 ]; then
+  if [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ]; then
+    # BF modes & password settings
+    sysfs_dump_bf_modes
+    sysfs_dump_pass_settings
+
     # Rshim MAC address.
     mac=$(hexdump -v -e '/1 "%02x"' ${rshim_efi_mac_sysfs})
     mac="${mac:8:2}:${mac:10:2}:${mac:12:2}:${mac:14:2}:${mac:16:2}:${mac:18:2}"
@@ -1034,6 +1203,30 @@ get_hca_p0_mac()
   echo "${num}"
 }
 
+boot_cfg_dump()
+{
+  local value tmp_entry boot_order boot_order_str boot_current timeout
+
+  if [ ${dump_level} -eq ${DUMP_LEVEL_NONE} ]; then
+    return
+  fi
+
+  boot_current=$(efibootmgr 2>/dev/null | grep BootCurrent | awk '{print $2}')
+  timeout=$(efibootmgr 2>/dev/null | grep Timeout | awk '{print $2}')
+  boot_order=$(efibootmgr 2>/dev/null | grep BootOrder | awk '{print $2}')
+  boot_order_str=$(echo "${boot_order}" | fold -w 40 | sed -e 's/^/    /')
+
+  echo "boot: BOOT_TIMEOUT_SEC=${timeout}"
+  echo "boot: BOOT_CURRENT=${boot_current}"
+  if [ ${dump_level} -ge ${DUMP_LEVEL_EXTRA} ]; then
+    echo "boot:"
+    echo "  BOOT_ORDER:"
+    echo "${boot_order_str}"
+    echo "  BOOT_OPTIONS:"
+    echo "$(efibootmgr | tail +4 | sed -e 's/^/    /')"
+  fi
+}
+
 #
 # Boot Entry configuration
 # Each entry BOOT<N> could have the following format:
@@ -1051,14 +1244,17 @@ boot_cfg()
 {
   local i tmp idx entry ifname proto mac vlan vlan_len disk_entry_idx
   local shell_entry disk_entries boot_order
-  local tmp_dir=/tmp/.boot_cfg
+  local tmp_dir=${TMP_DIR}/.boot_cfg
   local tmp_file=${tmp_dir}/boot
   local tmp_vlan_file=${tmp_dir}/vlan
   local value tmp_entry old_boot_order
   local l4proto l4proto_len
   local oob_mac_addr num oob_vlan_path
 
-  [ $dump_mode -eq 1 ] && return
+  if [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ]; then
+    boot_cfg_dump
+    return
+  fi
 
   rm -rf ${tmp_dir} 2>/dev/null
   mkdir -p ${tmp_dir}
@@ -1278,13 +1474,93 @@ boot_cfg()
   rm -rf ${tmp_dir} 2>/dev/null
 }
 
+# Dump secure boot config and related information
+sb_cfg_dump()
+{
+  local secure_boot setup_mode setup_mode_str custom_mode custom_mode_str sb_enabled
+  local tmp_file=${TMP_DIR}/.bfcfg-sysfs-data
+
+  if [ ${dump_level} -eq ${DUMP_LEVEL_NONE} ]; then
+    return
+  fi
+
+  if [ ! -e "${sb_state_sysfs}" ]; then
+    log_msg "sb: failed to find the ${sb_state_sysfs} EFI variable"
+    return
+  fi
+
+  if [ ! -e "${sb_setup_mode_sysfs}" ]; then
+    log_msg "sb: failed to find the ${sb_setup_mode_sysfs} EFI variable"
+    return
+  fi
+
+  # shellcheck disable=SC2216
+  yes | cp -f ${sb_state_sysfs} ${tmp_file}
+  secure_boot=$(hexdump -s 4 -n 1 -e '/1 "%d" "\n"' ${tmp_file})
+
+  # shellcheck disable=SC2216
+  yes | cp -f ${sb_setup_mode_sysfs} ${tmp_file}
+  setup_mode=$(hexdump -s 4 -n 1 -e '/1 "%d" "\n"' ${tmp_file})
+
+  if [ "${secure_boot}" -eq 1 ] && [ "${setup_mode}" -eq 0 ]; then
+    sb_enabled=1
+  else
+    sb_enabled=0
+  fi
+
+  if [ "${setup_mode}" -eq 1 ]; then
+    setup_mode_str="SETUP"
+  else
+    setup_mode_str="USER"
+  fi
+
+  echo "sb: SECURE_BOOT_ENABLED=${sb_enabled}"
+  echo "sb: SETUP_MODE=${setup_mode_str}"
+
+  if [ -e "${sb_custom_mode_sysfs}" ]; then
+    # shellcheck disable=SC2216
+    yes | cp -f ${sb_custom_mode_sysfs} ${tmp_file}
+    custom_mode=$(hexdump -s 4 -n 1 -e '/1 "%d" "\n"' ${tmp_file})
+    if [ "${custom_mode}" -eq 1 ]; then
+      custom_mode_str="CUSTOM"
+    else
+      custom_mode_str="STANDARD"
+    fi
+    echo "sb: CUSTOM_MODE=${custom_mode_str}"
+  fi
+
+  if [ ${dump_level} -ge ${DUMP_LEVEL_EXTRA} ]; then
+    if command -v mokutil &> /dev/null; then
+      echo "sb:"
+      echo "  Platform Key (PK):"
+      echo "$(mokutil --pk | sed 's/^/    /')"
+      echo "  Key Exchange Key (KEK):"
+      echo "$(mokutil --kek | sed 's/^/    /')"
+      echo "  Signatures Database (DB):"
+      echo "$(mokutil --db | sed 's/^/    /')"
+      echo "  Forbidden Signatures Database (DBX):"
+      echo "$(mokutil --dbx | sed 's/^/    /')"
+      echo "  Machine Owner Keys (MOK):"
+      echo "$(mokutil --list-enrolled | sed 's/^/    /')"
+    else
+      log_msg "sb: 'mokutil' needs to be installed to dump certificates"
+    fi
+  fi
+
+  rm -f ${tmp_file}
+  return
+}
+
 # Enable UEFI Secure boot with default settings.
 # UEFI password is reset to default.
 sb_cfg()
 {
   local sb_capsule_file=/lib/firmware/mellanox/boot/capsule/EnrollKeysCap
 
-  [ $dump_mode -eq 1 ] && return
+  if [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ]; then
+    sb_cfg_dump
+    return
+  fi
 
   [ "${UEFI_SECURE_BOOT}" != "TRUE" ] && return
 
@@ -2095,10 +2371,10 @@ cfg2bin()
   local out_file=$(basename $1).bin
   local cfg_file=$1
 
-  local mfg_cfg_bin='/tmp/.mfg_cfg.cfg'
-  local pch_cfg_bin='/tmp/.pch_cfg.bin'
-  local bmc_cfg_bin='/tmp/.bmc_cfg.bin'
-  local arm_cfg_bin='/tmp/.arm_cfg.bin'
+  local mfg_cfg_bin='${TMP_DIR}/.mfg_cfg.cfg'
+  local pch_cfg_bin='${TMP_DIR}/.pch_cfg.bin'
+  local bmc_cfg_bin='${TMP_DIR}/.bmc_cfg.bin'
+  local arm_cfg_bin='${TMP_DIR}/.arm_cfg.bin'
   local pcp_cfg_bin="$mfg_cfg_bin"
   local cfg_len=0
 
@@ -2702,7 +2978,7 @@ parse_bfb()
 {
   local inbfb=$1
   local outbin=$2
-  local tmp_cap_file='/tmp/.bf.cfg.cap.tmp'
+  local tmp_cap_file='${TMP_DIR}/.bf.cfg.cap.tmp'
 
   local bfb_hdr_len=24
   #
@@ -2791,8 +3067,8 @@ bin2cfg()
 {
   local out_file=$(basename $1).cfg
   local bin_file=$1
-  local tmp_cfg_file='/tmp/.bf.cfg.tmp'
-  local tmp_bin_file='/tmp/.bf.bin.tmp'
+  local tmp_cfg_file='${TMP_DIR}/.bf.cfg.tmp'
+  local tmp_bin_file='${TMP_DIR}/.bf.bin.tmp'
 
   if ! command -v xxd > /dev/null; then
     echo "error: $0 requires the xxd command, please install it first"
@@ -2890,21 +3166,23 @@ print_osarg()
 
 usage()
 {
-  echo "syntax: bfcfg [--help|-h] [--version|-v] [--dump|-d] [--dump-osarg|o] [--part-info|-p]"
-  echo "              [--hscv|-h] [--cfg2bin|-c <cfg_file>] [--bin2cfg|-b <bin_file> [--skip-mfg]]"
+  echo "syntax: bfcfg [--help|-h] [--version|-v] [--dump|-d] [--dump-level|-l <${DUMP_LEVEL_NONE}-${DUMP_LEVEL_MAX}>] [--dump-osarg|o]"
+  echo "              [--part-info|-p] [--hscv|-h] [--cfg2bin|-c <cfg_file>] [--bin2cfg|-b <bin_file> [--skip-mfg]]"
 }
 
+dump_mode=0
 has_cfg2bin=0
 has_bin2cfg=0
 infile=
 skip_mfg=0
 
 # Parse the arguments.
-options=$(getopt -n bfcfg -o dohvpc:b:s -l dump,dump-osarg,help,part-info,cfg2bin:,bin2cfg:,skip-mfg,version,hscv -- "$@")
+options=$(getopt -n bfcfg -o dl:ohvpc:b:s -l dump,dump-level:,dump-osarg,help,part-info,cfg2bin:,bin2cfg:,skip-mfg,version,hscv -- "$@")
 eval set -- "$options"
 while [ "$1" != -- ]; do
   case $1 in
-    --dump|-d) dump_mode=1 ;;
+    --dump|-d) dump_mode=1;;
+    --dump-level|-l) dump_level=$2 ;;
     --dump-osarg|o) print_osarg; exit 0;;
     --help|-h) usage; exit 0 ;;
     --part-info|-p) part_info; exit 0 ;;
@@ -2917,6 +3195,16 @@ while [ "$1" != -- ]; do
   shift
 done
 shift
+
+# Ensure dump_level is set correctly based on input dump_mode and dump_level.
+if [ ${dump_mode} -eq 0 ]; then
+  dump_level=${DUMP_LEVEL_NONE}
+elif [ -z "${dump_level}" ]; then
+  dump_level=${DUMP_LEVEL_DEFAULT}
+elif ! [[ "${dump_level}" =~ ^[${DUMP_LEVEL_NONE}-${DUMP_LEVEL_MAX}]$ ]]; then
+  echo "Invalid dump level." 2>>${log_file}
+  exit 0
+fi
 
 if [ "$has_cfg2bin" -eq 1 ]; then
   cfg2bin $infile
@@ -2937,7 +3225,7 @@ start_log_file
 test "$(ls -A ${efivars})" || mount -t efivarfs none ${efivars}
 
 icm_cfg
-if [ ${dump_mode} -eq 1 ]; then
+if [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ]; then
   # Backward compatibility; dump mfg_cfg prior
   # to sys_cfg and sys_redfish_cfg
   mfg_cfg
