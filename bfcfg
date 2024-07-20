@@ -32,7 +32,7 @@ true
 
 ${BFDBG}
 
-bfcfg_version=3.2
+bfcfg_version=4.0
 bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
@@ -661,9 +661,13 @@ sys_cfg_one_byte()
 #   SYS_ENABLE_SPCR      32            1
 #   SYS_DISABLE_PCIE     33            1
 #   SYS_ENABLE_OPTEE     34            1
+#   SYS_DISABLE_TMFF     35            1
 #   SYS_ENABLE_I2C0      36            1
 #   SYS_DISABLE_FORCE_PXE_RETRY  37    1
 #   SYS_ENABLE_BMC_FIELD_MODE    38    1
+#   SYS_DISABLE_HEST     49            1
+#   SYS_DISABLE_AUTO_BOOT_REFRESH  66  1
+#   SYS_DISPLAY_BMC_NET_CONFIG     67  1
 #
 sys_cfg()
 {
@@ -687,9 +691,13 @@ sys_cfg()
   sys_cfg_one_byte ${tmp_file} "ENABLE_SPCR" 32 "${SYS_ENABLE_SPCR}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_PCIE" 33 "${SYS_DISABLE_PCIE}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_OPTEE" 34 "${SYS_ENABLE_OPTEE}"
+  sys_cfg_one_byte ${tmp_file} "DISABLE_TMFF" 35 "${SYS_DISABLE_TMFF}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_I2C0" 36 "${SYS_ENABLE_I2C0}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_FORCE_PXE_RETRY" 37 "${SYS_DISABLE_FORCE_PXE_RETRY}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_BMC_FIELD_MODE" 38 "${SYS_ENABLE_BMC_FIELD_MODE}"
+  sys_cfg_one_byte ${tmp_file} "DISABLE_HEST" 49 "${SYS_DISABLE_HEST}"
+  sys_cfg_one_byte ${tmp_file} "DISABLE_AUTO_BOOT_REFRESH" 66 "${SYS_DISABLE_AUTO_BOOT_REFRESH}"
+  sys_cfg_one_byte ${tmp_file} "DISPLAY_BMC_NET_CONFIG" 67 "${SYS_DISPLAY_BMC_NET_CONFIG}"
 
   if [ ${has_change} -eq 1 ]; then
     chattr -i ${sys_cfg_sysfs}
@@ -1287,14 +1295,671 @@ sb_cfg()
   fi
 }
 
-# Convert input configuration to a binary file. As of
-# now only MFG configuration is converted.
 #
-# Note 1: MFG dependencies such as system attributes
-#         and Redfish settings are not supported.
+# Configuration blob layout.
 #
-# Note 2: This function can be enhanced to support
-#         additional configuration.
+# Please refer to this page to lear more about the
+# configuration binary format and various parameters.
+# https://confluence.nvidia.com/pages/viewpage.action?spaceKey=SW&title=BlueField+Platform+Configuration
+#
+# Layout:
+#   Legacy MFG configuration and dependencies (4096 bytes)
+#       MFG Data      (off:   0, len: 256 bytes)
+#       MFG Extension (off: 256, len:2048 bytes)
+#       SYS Config    (off:2304, len:  64 bytes)
+#       RDF Config    (off:2368, len:  32 bytes)
+#       BF Modes      (off:2400, len:   4 bytes)
+#       Reserved      (off:2404, len:1692 bytes)
+#
+#   Platform Config Header  (PCH) - (128 bytes)
+#   Platform Config Payload (PCP) - Variable size.
+#
+
+#
+# PCH fixed parameters
+#
+# hex: 42 5e 46 5e 5e 50 43 48
+PCH_FP="B^F^^PCH"
+PCH_HEADER_LEN=128
+PCH_HEADER_TYPE=1
+PCH_HEADER_VERSION=1
+#
+# PCP fixed parameters
+#
+PCP_TYPE_LEN=4
+PCP_LENGTH_LEN=4
+# This version is read by both platform firmware
+# and BMC firmware. It is used to determine whether
+# the given config encapsulated within the payload
+# is supported. If any change in the PCP format or
+# the layout this version must be bump-ed up.
+# This verson number must be kept in sync with
+# version defined in UEFI firmware.
+PCP_VERSION=1
+#
+# PCP config type
+#
+PCP_TYPE_INVALID_CFG=0
+PCP_TYPE_ARM_CFG=1
+PCP_TYPE_BMC_CFG=2
+PCP_TYPE_NIC_CFG=3
+#
+# PCP subtype
+#
+PCP_CFG_SUBTYPE_INVALID=0
+#
+# Subtype for PCP_TYPE_ARM_CFG
+#
+ARM_CFG_SUBTYPE_CTL=1
+ARM_CFG_SUBTYPE_CTL_LEN=64
+ARM_CFG_SUBTYPE_PWR=2
+#ARM_CFG_SUBTYPE_PWR_LEN=
+ARM_CFG_SUBTYPE_THERMAL=3
+#ARM_CFG_SUBTYPE_THERMAL_LEN=
+ARM_CFG_SUBTYPE_DDR=4
+#ARM_CFG_SUBTYPE_DDR_LEN=
+ARM_CFG_SUBTYPE_SYS=5
+ARM_CFG_SUBTYPE_SYS_LEN=80
+ARM_CFG_SUBTYPE_BOOT=6
+ARM_CFG_SUBTYPE_BOOT_LEN=640
+ARM_CFG_SUBTYPE_MISC=7
+ARM_CFG_SUBTYPE_MISC_LEN=256
+ARM_CFG_SUBTYPE_UEFI_SB=8
+#ARM_CFG_SUBTYPE_UEFI_SB_LEN=
+#
+# Subtype for PCP_TYPE_BMC_CFG
+#
+BMC_CFG_SUBTYPE_MISC=1
+BMC_CFG_SUBTYPE_MISC_LEN=600
+BMC_CFG_SUBTYPE_USER_DEFAULT=2
+BMC_CFG_SUBTYPE_USER_DEFAULT_LEN=264
+BMC_CFG_SUBTYPE_NTP=3
+BMC_CFG_SUBTYPE_NTP_LEN=264
+
+# Converts a value to bytes.
+# Bytes are swapped after conversion.
+# For example, val=128, len=4 -> \x80\x00\x00\x00
+to_bytes()
+{
+  local val=$1
+  local len=$2
+  local bytes=$(printf "%0$(( $len * 2 ))X" "$val" | xxd -p -c 2 | sed '1!G;h;$!d' | tr -d '\n' | xxd -r -p | sed -e 's/[0-9A-F]\{2\}/&\\x/g' -e 's/\\x$//')
+
+  printf "\\x$bytes"
+}
+
+# Converts bytes read from input file to integer.
+# Bytes are swapped before conversion.
+# For example, 0A -> 10
+to_integer()
+{
+  local in_file=$1
+  local offset=$2
+  local size=$3
+  local value=0
+
+  value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | xxd -p -c 1 | sed '1!G;h;$!d' | tr -d '\n')
+  echo $(( 16#$value ))
+}
+
+arm_cfg_get_value()
+{
+  local out_file=$1
+  local name=$2
+  local offset=$3
+  local size=$4
+  local in_file=$5
+  local value=0
+
+  if [ -f "${in_file}" ]; then
+    if [[ "$name" == "BOOT"* ]] \
+      || [ "$name" = "PXE_DHCP_CLASS_ID" ] \
+      || [ "$name" = "BF_BUNDLE_VERSION" ]; then
+      value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | tr -d '\0')
+      if [[ "$name" == "BOOT"*"_DESC" ]] \
+      || [[ "$name" == "BOOT"*"_ARGS" ]] \
+      || [[ "$name" == "BOOT"*"_DEVPATH" ]]; then
+        if [ -n "$value" ]; then echo "$name='$value'" >> ${out_file}; fi
+      else
+        if [ -n "$value" ]; then echo "$name=$value" >> ${out_file}; fi
+    fi
+
+    elif [ "${name}" = "SYS_ENABLE_SPCR" ]; then
+      value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | tr -d '\0')
+      if [ "$value" = "0" ]; then echo "$name=FALSE" >> ${out_file}; fi
+      if [ "$value" = "1" ]; then echo "$name=TRUE" >> ${out_file}; fi
+      if [ "$value" = "2" ]; then echo "$name=TRUE" >> ${out_file}; fi
+      # Print SYS_SPCR_PORT value
+      if [ "$value" = "1" ]; then echo "SYS_SPCR_PORT=0" >> ${out_file}; fi
+      if [ "$value" = "2" ]; then echo "SYS_SPCR_PORT=1" >> ${out_file}; fi
+
+    elif [ "$name" = "SYS_CE_THRESHOLD" ]; then
+      #value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | tr -d '\0')
+      #if [ "$value" != "FFFFFF" ]; then echo "$name=$value" >> ${out_file}; fi
+      value=$(to_integer ${in_file} ${offset} $size)
+      # FFFFFFFF is an invalid value.
+      if [ "$value" -ne 4294967295 ]; then echo "$name=$value" >> ${out_file}; fi
+
+    elif [ "$name" = "SYS_L3_CACHE_PARTITION_LEVEL" ]; then
+      #value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | tr -d '\0')
+      #if [ "$value" != "FF" ]; then echo "$name=$value" >> ${out_file}; fi
+      value=$(to_integer ${in_file} ${offset} $size)
+      # FF is an invalid value.
+      if [ "$value" -ne 255 ]; then echo "$name=$value" >> ${out_file}; fi
+
+    elif [[ "$name" == "SYS_"* ]] \
+      || [[ "$name" == "CTL_"* ]] \
+      || [ "$name" = "FACTORY_DEFAULT_DHCP_BEHAVIOR" ]; then
+      value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | tr -d '\0')
+      if [ "$value" = "1" ]; then echo "$name=TRUE" >> ${out_file}; fi
+      if [ "$value" = "0" ]; then echo "$name=FALSE" >> ${out_file}; fi
+
+    elif [ "$name" = "MFG_PLAT_MODE" ]; then
+      value=$(to_integer ${in_file} ${offset} $size)
+      if [ $value -eq 1 ]; then echo "$name=DPU" >> ${out_file}; fi
+      if [ $value -eq 2 ]; then echo "$name=NIC" >> ${out_file}; fi
+
+    elif [ "$name" = "NET_RSHIM_MAC" ]; then
+      value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | xxd -p)
+      mac=$(echo $value | sed -e 's/../&:/g' -e 's/:$//')
+      [ "$mac" != "00:00:00:00:00:00" ] && echo "$name=$mac" >> ${out_file}
+
+    elif [ "$name" = "NET_DHCP_IPV6_DUID" ]; then
+      value=$(to_integer ${in_file} ${offset} $size)
+      if [ $value -eq 1 ]; then echo "$name=UUID" >> ${out_file}; fi
+      if [ $value -eq 2 ]; then echo "$name=LLT" >> ${out_file}; fi
+
+    fi
+  fi
+
+  return
+}
+
+arm_sys_cfg_set_value()
+{
+  local out_file=$1
+  local name=$2
+  local offset=$3
+  local size=$4
+  local value=$5
+
+  [ ! -f "${out_file}" ] && return
+
+  if [ -n "${value}" ]; then
+    if [ "$name" = "NET_RSHIM_MAC" ]; then
+      printf "\\x${NET_RSHIM_MAC//:/\\x}" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+    elif [ "$name" = "NET_DHCP_IPV6_DUID" ]; then
+      if [ "${value^^}" == "UUID" ]; then printf "\x01" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null; fi
+      if [ "${value^^}" == "LLT" ]; then printf "\x02" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null; fi
+    elif [ "$name" = "MFG_PLAT_MODE" ]; then
+      if [ "${value^^}" == "DPU" ]; then printf "\x01" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null; fi
+      if [ "${value^^}" == "NIC" ]; then printf "\x02" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null; fi
+    elif [ "$name" = "SYS_CE_THRESHOLD" ] \
+      || [ "$name" = "SYS_L3_CACHE_PARTITION_LEVEL" ]; then
+      to_bytes ${value} ${size} |  dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+    elif [ "${name}" = "SYS_ENABLE_SPCR" ]; then
+      if [ "${value^^}" = "TRUE" ]; then
+        if [ -n "${SYS_SPCR_PORT}" ]; then
+          if [ "${SYS_SPCR_PORT}" = "1" ]; then printf "\x32" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+          elif [ "${SYS_SPCR_PORT}" = "0" ]; then printf "\x31" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+          # Ignore, if invalid value.
+          else printf "\x00" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+          fi
+        else
+          # Simply enable SPCR with default port number
+          printf "\x31" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+        fi
+      elif [ "${value^^}" = "FALSE" ]; then
+        printf "\x30" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+      fi
+    elif [ "${value^^}" = "TRUE" ]; then
+      printf "\x31" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+    elif [ "${value^^}" = "FALSE" ]; then
+      printf "\x30" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+    else
+      printf "${value}" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+    fi
+  else
+    # Write default values.
+    if [ "$name" = "SYS_CE_THRESHOLD" ]; then
+      #printf "FFFFFFFF" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+      # Write FFFFFFFF to invalidate the parameter.
+      to_bytes 4294967295 ${size} |  dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+    elif [ "$name" = "SYS_L3_CACHE_PARTITION_LEVEL" ]; then
+      #printf "FF" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+      # Write FF to invalidate the parameter.
+      to_bytes 255 ${size} |  dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+    fi
+  fi
+
+  return
+}
+
+# Refer to this page to obtain info on configuration binary format.
+# https://confluence.nvidia.com/pages/viewpage.action?spaceKey=SW&title=BlueField+Platform+Configuration
+arm_cfg_to_bin()
+{
+  local out_file=$1
+
+  local cfg_len=0
+  local has_cfg_ctl=0
+  local has_cfg_sys=0
+  local has_cfg_boot=0
+  local has_cfg_misc=0
+
+  if [ -n "${CTL_RESET_ALL_SYS}" ] \
+    || [ -n "${CTL_RESET_ALL_BOOT}" ] \
+    || [ -n "${CTL_RESET_ALL_MISC}" ]; then
+    has_cfg_ctl=1
+  fi
+
+  [ "$has_cfg_ctl" -eq 1 ] && cfg_len=$(( $cfg_len + $ARM_CFG_SUBTYPE_CTL_LEN ))
+
+  # Check system config
+  if [ -n "${SYS_ENABLE_SMMU}" ] \
+    || [ -n "${SYS_DISABLE_SPMI}" ] \
+    || [ -n "${SYS_ENABLE_2ND_EMMC}" ] \
+    || [ -n "${SYS_BOOT_PROTECT}" ] \
+    || [ -n "${SYS_ENABLE_SPCR}" ] \
+    || [ -n "${SYS_DISABLE_PCIE}" ] \
+    || [ -n "${SYS_ENABLE_OPTEE}" ] \
+    || [ -n "${SYS_DISABLE_TMFF}" ] \
+    || [ -n "${SYS_ENABLE_I2C0}" ] \
+    || [ -n "${SYS_DISABLE_FORCE_PXE_RETRY}" ] \
+    || [ -n "${SYS_ENABLE_BMC_FIELD_MODE}" ] \
+    || [ -n "${SYS_CE_THRESHOLD}" ] \
+    || [ -n "${SYS_DISABLE_HEST}" ] \
+    || [ -n "${SYS_L3_CACHE_PARTITION_LEVEL}" ] \
+    || [ -n "${SYS_DISABLE_AUTO_BOOT_REFRESH}" ] \
+    || [ -n "${SYS_DISPLAY_BMC_NET_CONFIG}" ] \
+    || [ -n "${SYS_ENABLE_REDFISH}" ] \
+    || [ -n "${SYS_RTCSYNC}" ] \
+    || [ -n "${MFG_PLAT_MODE}" ]; then
+    has_cfg_sys=1
+  fi
+
+  [ "$has_cfg_sys" -eq 1 ] && cfg_len=$(( $cfg_len +  $ARM_CFG_SUBTYPE_SYS_LEN ))
+
+  # Count the boot config if any
+  boot_cnt=0
+  for i in {0..32}; do
+    eval "boot_id=\$BOOT${i}"
+    eval "boot_img=\$BOOT${i}_DESC"
+    eval "boot_dp=\$BOOT${i}_DEVPATH"
+    eval "boot_args=\$BOOT${i}_ARGS"
+    # Only image ID/Descriptor is mandatory.Boot image path, boot device path
+    # and boot arguments are optional.
+    if [ -n "$boot_id" ]; then
+      boot_cnt=$(( $boot_cnt + 1 ))
+      has_cfg_boot=1
+    fi
+  done
+
+  [ "$has_cfg_boot" -eq 1 ] && cfg_len=$(( $cfg_len + $boot_cnt * $ARM_CFG_SUBTYPE_BOOT_LEN ))
+
+  if [ -n "${NET_RSHIM_MAC}" ] \
+    || [ -n "${FACTORY_DEFAULT_DHCP_BEHAVIOR}" ] \
+    || [ -n "${PXE_DHCP_CLASS_ID}" ] \
+    || [ -n "${BF_BUNDLE_VERSION}" ] \
+    || [ -n "${NET_DHCP_IPV6_DUID}" ]; then
+    has_cfg_misc=1
+  fi
+
+  [ "$has_cfg_misc" -eq 1 ] && cfg_len=$(( $cfg_len +  $ARM_CFG_SUBTYPE_MISC_LEN ))
+
+  if [ "$has_cfg_sys" -eq 1 ] \
+    || [ "$has_cfg_boot" -eq 1 ] \
+    || [ "$has_cfg_misc" -eq 1 ]; then
+    cfg_len=$(( $cfg_len + $PCP_TYPE_LEN + $PCP_LENGTH_LEN ))
+  else
+    echo "no arm config found!"
+    return
+  fi
+
+  #
+  # Prepare the BMC Config record
+  #
+  dd if=/dev/zero of=${out_file} count=${cfg_len} bs=1 2> /dev/null
+
+  local off=$(( $off + $PCP_TYPE_LEN + $PCP_LENGTH_LEN ))
+
+  # Write boot config to blob
+  if [ "$has_cfg_ctl" -eq 1 ]; then
+    arm_sys_cfg_set_value ${out_file} "CTL_RESET_ALL_SYS" $(( $off + 4 )) 1 "${CTL_RESET_ALL_SYS}"
+    arm_sys_cfg_set_value ${out_file} "CTL_RESET_ALL_BOOT" $(( $off + 5 )) 1 "${CTL_RESET_ALL_BOOT}"
+    arm_sys_cfg_set_value ${out_file} "CTL_RESET_ALL_MISC" $(( $off + 6 )) 1 "${CTL_RESET_ALL_MISC}"
+    # Add length and subtype.
+    to_bytes "$(( $ARM_CFG_SUBTYPE_CTL_LEN - 3))" 2 | dd of="${out_file}" seek=$(( $off + 1 )) bs=1 count=2 conv=notrunc 2> /dev/null
+    to_bytes "${ARM_CFG_SUBTYPE_CTL}" 1 | dd of="${out_file}" seek=$(( $off + 0 )) bs=1 count=1 conv=notrunc 2> /dev/null
+    # Increment offset
+    off=$(( $off +  $ARM_CFG_SUBTYPE_CTL_LEN))
+  fi
+
+  if [ "$has_cfg_sys" -eq 1 ]; then
+    arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_SMMU" $(( $off + 24 )) 1 "${SYS_ENABLE_SMMU}"
+    arm_sys_cfg_set_value ${out_file} "SYS_DISABLE_SPMI" $(( $off + 25 )) 1 "${SYS_DISABLE_SPMI}"
+    arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_2ND_EMMC" $(( $off + 26 )) 1 "${SYS_ENABLE_2ND_EMMC}"
+    arm_sys_cfg_set_value ${out_file} "SYS_BOOT_PROTECT" $(( $off + 27 )) 1 "${SYS_BOOT_PROTECT}"
+    arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_SPCR" $(( $off + 32 )) 1 "${SYS_ENABLE_SPCR}"
+    arm_sys_cfg_set_value ${out_file} "SYS_DISABLE_PCIE" $(( $off + 33 )) 1 "${SYS_DISABLE_PCIE}"
+    arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_OPTEE" $(( $off + 34 )) 1 "${SYS_ENABLE_OPTEE}"
+    arm_sys_cfg_set_value ${out_file} "SYS_DISABLE_TMFF" $(( $off + 35 )) 1 "${SYS_DISABLE_TMFF}"
+    arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_I2C0" $(( $off + 36 )) 1 "${SYS_ENABLE_I2C0}"
+    arm_sys_cfg_set_value ${out_file} "SYS_DISABLE_FORCE_PXE_RETRY" $(( $off + 37 )) 1 "${SYS_DISABLE_FORCE_PXE_RETRY}"
+    arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_BMC_FIELD_MODE" $(( $off + 38 )) 1 "${SYS_ENABLE_BMC_FIELD_MODE}"
+    arm_sys_cfg_set_value ${out_file} "SYS_CE_THRESHOLD" $(( $off + 45 )) 4 "${SYS_CE_THRESHOLD}"
+    arm_sys_cfg_set_value ${out_file} "SYS_DISABLE_HEST" $(( $off + 49 )) 1 "${SYS_DISABLE_HEST}"
+    arm_sys_cfg_set_value ${out_file} "SYS_L3_CACHE_PARTITION_LEVEL" $(( $off + 50 )) 1 "${SYS_L3_CACHE_PARTITION_LEVEL}"
+    arm_sys_cfg_set_value ${out_file} "SYS_DISABLE_AUTO_BOOT_REFRESH" $(( $off + 66 )) 1 "${SYS_DISABLE_AUTO_BOOT_REFRESH}"
+    arm_sys_cfg_set_value ${out_file} "SYS_DISPLAY_BMC_NET_CONFIG" $(( $off + 67 )) 1 "${SYS_DISPLAY_BMC_NET_CONFIG}"
+    arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_REDFISH" $(( $off + 68 )) 1 "${SYS_ENABLE_REDFISH}"
+    arm_sys_cfg_set_value ${out_file} "SYS_RTCSYNC" $(( $off + 69 )) 1 "${SYS_RTCSYNC}"
+    arm_sys_cfg_set_value ${out_file} "MFG_PLAT_MODE" $(( $off + 74 )) 1 "${MFG_PLAT_MODE}"
+    # Add length and subtype.
+    to_bytes "$(( $ARM_CFG_SUBTYPE_SYS_LEN - 3))" 2 | dd of="${out_file}" seek=$(( $off + 1 )) bs=1 count=2 conv=notrunc 2> /dev/null
+    to_bytes "${ARM_CFG_SUBTYPE_SYS}" 1 | dd of="${out_file}" seek=$(( $off + 0 )) bs=1 count=1 conv=notrunc 2> /dev/null
+    # Increment offset
+    off=$(( $off +  $ARM_CFG_SUBTYPE_SYS_LEN))
+  fi
+
+  # Write boot config to blob
+  if [ "$has_cfg_boot" -eq 1 ]; then
+    for i in {0..32}; do
+        eval "boot_id=\$BOOT${i}"
+        eval "boot_img=\$BOOT${i}_DESC"
+        eval "boot_dp=\$BOOT${i}_DEVPATH"
+        eval "boot_args=\$BOOT${i}_ARGS"
+        if [ -n "$boot_id" ]; then
+          arm_sys_cfg_set_value ${out_file} "BOOT" $(( $off + 4 )) 60 "${boot_id}"
+          arm_sys_cfg_set_value ${out_file} "BOOT_DESC" $(( $off + 64 )) 64 "${boot_img}"
+          arm_sys_cfg_set_value ${out_file} "BOOT_DEVPATH" $(( $off + 128 )) 256 "${boot_dp}"
+          arm_sys_cfg_set_value ${out_file} "BOOT_ARGS" $(( $off + 384 )) 256 "${boot_args}"
+          # Add index, length and subtype
+          to_bytes "${i}" 1 | dd of="${out_file}" seek=$(( $off + 3 )) bs=1 count=1 conv=notrunc 2> /dev/null
+          to_bytes "$(( $ARM_CFG_SUBTYPE_BOOT_LEN - 3))" 2 | dd of="${out_file}" seek=$(( $off + 1 )) bs=1 count=2 conv=notrunc 2> /dev/null
+          to_bytes "${ARM_CFG_SUBTYPE_BOOT}" 1 | dd of="${out_file}" seek=$(( $off + 0 )) bs=1 count=1 conv=notrunc 2> /dev/null
+          # Increment offset
+          off=$(( $off +  $ARM_CFG_SUBTYPE_BOOT_LEN))
+        fi
+    done
+  fi
+
+  # Write misc config to blob
+  if [ "$has_cfg_misc" -eq 1 ]; then
+    arm_sys_cfg_set_value ${out_file} "NET_RSHIM_MAC" $(( $off + 4 )) 6 "${NET_RSHIM_MAC}"
+    arm_sys_cfg_set_value ${out_file} "NET_DHCP_IPV6_DUID" $(( $off + 10 )) 1 "${NET_DHCP_IPV6_DUID}"
+    arm_sys_cfg_set_value ${out_file} "FACTORY_DEFAULT_DHCP_BEHAVIOR" $(( $off + 16 )) 1 "${FACTORY_DEFAULT_DHCP_BEHAVIOR}"
+    arm_sys_cfg_set_value ${out_file} "PXE_DHCP_CLASS_ID" $(( $off + 17 )) 63 "${PXE_DHCP_CLASS_ID}"
+    arm_sys_cfg_set_value ${out_file} "BF_BUNDLE_VERSION" $(( $off + 80 )) 128 "${BF_BUNDLE_VERSION}"
+    # Add length and subtype.
+    to_bytes "$(( $ARM_CFG_SUBTYPE_MISC_LEN - 3))" 2 | dd of="${out_file}" seek=$(( $off + 1 )) bs=1 count=2 conv=notrunc 2> /dev/null
+    to_bytes "${ARM_CFG_SUBTYPE_MISC}" 1 | dd of="${out_file}" seek=$(( $off + 0 )) bs=1 count=1 conv=notrunc 2> /dev/null
+    # Increment offset
+    off=$(( $off +  $ARM_CFG_SUBTYPE_MISC_LEN))
+  fi
+
+  # Push PCP Type and PCP Length for Arm config.
+  to_bytes "$(( $cfg_len - $PCP_TYPE_LEN - $PCP_LENGTH_LEN ))" $PCP_LENGTH_LEN | dd of="${out_file}" seek=$(( 0 + $PCP_TYPE_LEN )) bs=1 count=$PCP_LENGTH_LEN conv=notrunc 2> /dev/null
+  to_bytes "${PCP_TYPE_ARM_CFG}" $PCP_TYPE_LEN | dd of="${out_file}" seek=0 bs=1 count=$PCP_TYPE_LEN conv=notrunc 2> /dev/null
+
+  return
+}
+
+bmc_cfg_get_value()
+{
+  local out_file=$1
+  local name=$2
+  local offset=$3
+  local size=$4
+  local in_file=$5
+  local value=0
+
+  if [ -f "${in_file}" ]; then
+    if [[ "$name" == "BMC_USER_DEFAULT_USERNAME_"* ]] \
+      || [[ "$name" == "BMC_USER_DEFAULT_PASSWORD_"* ]] \
+      || [[ "$name" == "BMC_USER_DEFAULT_PRIVILEGE_"* ]] \
+      || [ "$name" = "BMC_SEED" ] \
+      || [ "$name" = "BMC_IPMI_ACCOUNTS" ] \
+      || [[ "$name" == "BMC_NTP_"* ]]; then
+      value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | tr -d '\0')
+      echo "$name='$value'" >> ${out_file}
+    elif [ "$name" = "BMC_EXPIRE_PASSWORD_ON_FIRST_LOGIN" ] \
+      || [ "$name" = "BMC_SOL_ENABLE" ] \
+      || [ "$name" = "BMC_WEBUI_ENABLE" ]; then
+      value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | tr -d '\0')
+      if [ "$value" = "1" ]; then echo "$name=yes" >> ${out_file}; fi
+      if [ "$value" = "0" ]; then echo "$name=no" >> ${out_file}; fi
+    elif [ "$name" = "BMC_PASSWORD_MINIMUM_LENGTH" ] \
+      || [ "$name" = "BMC_LOCK_ACCOUNT_MAX_RETRY" ] \
+      || [ "$name" = "BMC_SOL_CHARACTER_SEND_THRESHOLD" ] \
+      || [ "$name" = "BMC_SOL_CHARACTER_ACCUMULATE_LEVEL" ]; then
+      value=$(to_integer ${in_file} ${offset} $size)
+      # FFFF is an invalid value.
+      if [ "$value" -ne 65535 ]; then echo "$name=$value" >> ${out_file}; fi
+    fi
+  fi
+
+  return
+}
+
+bmc_cfg_set_value()
+{
+  local out_file=$1
+  local name=$2
+  local offset=$3
+  local size=$4
+  local value=$5
+
+  if [ -n "${value}" ] && [ -f "${out_file}" ]; then
+    if [ "$name" = "BMC_USER_DEFAULT_USERNAME" ] \
+      || [ "$name" = "BMC_USER_DEFAULT_PASSWORD" ] \
+      || [ "$name" = "BMC_USER_DEFAULT_PRIVILEGE" ] \
+      || [ "$name" = "BMC_SEED" ] \
+      || [ "$name" = "BMC_IPMI_ACCOUNTS" ] \
+      || [ "$name" = "BMC_NTP" ]; then
+      printf "${value}" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+    elif [ "${value^^}" = "YES" ]; then
+      printf "\x31" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+    elif [ "${value^^}" = "NO" ]; then
+      printf "\x30" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+    elif [ "${value}" -ge 0 ] && [ "${value}" -le 999 ]; then
+      to_bytes "${value}" ${size} |  dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+    fi
+  elif [ -z "${value}" ] && [ -f "${out_file}" ]; then
+    # Set default invalid values
+    if [ "$name" = "BMC_PASSWORD_MINIMUM_LENGTH" ] \
+      || [ "$name" = "BMC_LOCK_ACCOUNT_MAX_RETRY" ] \
+      || [ "$name" = "BMC_SOL_CHARACTER_SEND_THRESHOLD" ] \
+      || [ "$name" = "BMC_SOL_CHARACTER_ACCUMULATE_LEVEL" ]; then
+      # Write FFFF to invalidate the parameter.
+      to_bytes 65535 ${size} |  dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+    fi
+  fi
+
+  return
+}
+
+# Refer to this page to obtain info on configuration binary format.
+# https://confluence.nvidia.com/pages/viewpage.action?spaceKey=SW&title=BlueField+Platform+Configuration
+bmc_cfg_to_bin()
+{
+  local out_file=$1
+
+  local cfg_len=0
+  local has_cfg_misc=0
+  local has_cfg_user=0
+  local has_cfg_ntp=0
+
+  # Check common config
+  if [ -n "${BMC_EXPIRE_PASSWORD_ON_FIRST_LOGIN}" ] \
+    || [ -n "${BMC_LOCK_ACCOUNT_MAX_RETRY}" ] \
+    || [ -n "${BMC_PASSWORD_MINIMUM_LENGTH}" ] \
+    || [ -n "${BMC_SOL_ENABLE}" ] \
+    || [ -n "${BMC_SOL_CHARACTER_SEND_THRESHOLD}" ] \
+    || [ -n "${BMC_SOL_CHARACTER_ACCUMULATE_LEVEL}" ] \
+    || [ -n "${BMC_WEBUI_ENABLE}" ] \
+    || [ -n "${BMC_SEED}" ] \
+    || [ -n "${BMC_IPMI_ACCOUNTS}" ]; then
+    has_cfg_misc=1
+  fi
+
+  [ "$has_cfg_misc" -eq 1 ] && cfg_len=$(( $cfg_len +  $BMC_CFG_SUBTYPE_MISC_LEN ))
+
+  # Count the user config if any
+  user_cnt=0
+  for i in {0..32}; do
+    eval "name=\$BMC_USER_DEFAULT_USERNAME_${i}"
+    eval "passwd=\$BMC_USER_DEFAULT_PASSWORD_${i}"
+    eval "privilege=\$BMC_USER_DEFAULT_PRIVILEGE_${i}"
+    if [ -n "$name" ] && [ -n "$passwd" ] && [ -n "$privilege" ]; then
+        user_cnt=$(( $user_cnt + 1 ))
+        has_cfg_user=1
+    fi
+  done
+
+  [ "$has_cfg_user" -eq 1 ] && cfg_len=$(( $cfg_len + $user_cnt * $BMC_CFG_SUBTYPE_USER_DEFAULT_LEN ))
+
+  # Count NTP config if any
+  ntp_cnt=0
+  for i in {0..32}; do
+    eval "ntp=\$BMC_NTP_${i}"
+    if [ -n "$ntp" ]; then
+        ntp_cnt=$(( $ntp_cnt + 1 ))
+        has_cfg_ntp=1
+    fi
+  done
+
+  [ "$has_cfg_ntp" -eq 1 ] && cfg_len=$(( $cfg_len + $ntp_cnt * $BMC_CFG_SUBTYPE_NTP_LEN ))
+
+  if [ "$has_cfg_misc" -eq 1 ] \
+    || [ "$has_cfg_ntp" -eq 1 ] \
+    || [ "$has_cfg_user" -eq 1 ]; then
+    cfg_len=$(( $cfg_len + $PCP_TYPE_LEN + $PCP_LENGTH_LEN ))
+  else
+    echo "no bmc config found!"
+    return
+  fi
+
+  # Prepare the BMC Config record
+  dd if=/dev/zero of=${out_file} count=${cfg_len} bs=1 2> /dev/null
+
+  local off=$(( $off + $PCP_TYPE_LEN + $PCP_LENGTH_LEN ))
+
+  # Write common config to blob
+  if [ "$has_cfg_misc" -eq 1 ]; then
+    bmc_cfg_set_value ${out_file} "BMC_EXPIRE_PASSWORD_ON_FIRST_LOGIN" $(( $off + 3 )) 1 "${BMC_EXPIRE_PASSWORD_ON_FIRST_LOGIN}"
+    bmc_cfg_set_value ${out_file} "BMC_PASSWORD_MINIMUM_LENGTH" $(( $off + 4 )) 2 "${BMC_PASSWORD_MINIMUM_LENGTH}"
+    bmc_cfg_set_value ${out_file} "BMC_LOCK_ACCOUNT_MAX_RETRY" $(( $off + 6 )) 2 "${BMC_LOCK_ACCOUNT_MAX_RETRY}"
+    bmc_cfg_set_value ${out_file} "BMC_SOL_ENABLE" $(( $off + 8 )) 1 "${BMC_SOL_ENABLE}"
+    bmc_cfg_set_value ${out_file} "BMC_SOL_CHARACTER_SEND_THRESHOLD" $(( $off + 9 )) 2 "${BMC_SOL_CHARACTER_SEND_THRESHOLD}"
+    bmc_cfg_set_value ${out_file} "BMC_SOL_CHARACTER_ACCUMULATE_LEVEL" $(( $off + 11 )) 2 "${BMC_SOL_CHARACTER_ACCUMULATE_LEVEL}"
+    bmc_cfg_set_value ${out_file} "BMC_WEBUI_ENABLE" $(( $off + 16 )) 1 "${BMC_WEBUI_ENABLE}"
+    bmc_cfg_set_value ${out_file} "BMC_SEED" $(( $off + 24 )) 64 "${BMC_SEED}"
+    bmc_cfg_set_value ${out_file} "BMC_IPMI_ACCOUNTS" $(( $off + 88 )) 512 "${BMC_IPMI_ACCOUNTS}"
+    # Add length and subtype.
+    to_bytes "$(( $BMC_CFG_SUBTYPE_MISC_LEN - 3))" 2 | dd of="${out_file}" seek=$(( $off + 1 )) bs=1 count=2 conv=notrunc 2> /dev/null
+    to_bytes "${BMC_CFG_SUBTYPE_MISC}" 1 | dd of="${out_file}" seek=$(( $off + 0 )) bs=1 count=1 conv=notrunc 2> /dev/null
+    # Increment offset
+    off=$(( $off +  $BMC_CFG_SUBTYPE_MISC_LEN))
+  fi
+
+  # Write user config to blob
+  if [ "$has_cfg_user" -eq 1 ]; then
+    for i in {0..32}; do
+      eval "name=\$BMC_USER_DEFAULT_USERNAME_${i}"
+      eval "passwd=\$BMC_USER_DEFAULT_PASSWORD_${i}"
+      eval "privilege=\$BMC_USER_DEFAULT_PRIVILEGE_${i}"
+      if [ -n "$name" ] && [ -n "$passwd" ] && [ -n "$privilege" ]; then
+        bmc_cfg_set_value ${out_file} "BMC_USER_DEFAULT_PRIVILEGE" $(( $off + 8 )) 64 "${privilege}"
+        bmc_cfg_set_value ${out_file} "BMC_USER_DEFAULT_USERNAME" $(( $off + 72 )) 64 "${name}"
+        bmc_cfg_set_value ${out_file} "BMC_USER_DEFAULT_PASSWORD" $(( $off + 136 )) 128 "${passwd}"
+        # Add indx, length and subtype
+        to_bytes "${i}" 1 | dd of="${out_file}" seek=$(( $off + 3 )) bs=1 count=1 conv=notrunc 2> /dev/null
+        to_bytes "$(( $BMC_CFG_SUBTYPE_USER_DEFAULT_LEN - 3))" 2 | dd of="${out_file}" seek=$(( $off + 1 )) bs=1 count=2 conv=notrunc 2> /dev/null
+        to_bytes "${BMC_CFG_SUBTYPE_USER_DEFAULT}" 1 | dd of="${out_file}" seek=$(( $off + 0 )) bs=1 count=1 conv=notrunc 2> /dev/null
+        # Increment offset
+        off=$(( $off +  $BMC_CFG_SUBTYPE_USER_DEFAULT_LEN))
+      fi
+    done
+  fi
+
+  # Write ntp config to blob
+  if [ "$has_cfg_ntp" -eq 1 ]; then
+    for i in {0..32}; do
+      eval "ntp=\$BMC_NTP_${i}"
+      if [ -n "$ntp" ]; then
+        bmc_cfg_set_value ${out_file} "BMC_NTP" $(( $off + 8 )) 256 "${ntp}"
+        # Add indx, length and subtype
+        to_bytes "${i}" 1 | dd of="${out_file}" seek=$(( $off + 7 )) bs=1 count=1 conv=notrunc 2> /dev/null
+        to_bytes "$(( $BMC_CFG_SUBTYPE_NTP_LEN - 3))" 2 | dd of="${out_file}" seek=$(( $off + 1 )) bs=1 count=2 conv=notrunc 2> /dev/null
+        to_bytes "${BMC_CFG_SUBTYPE_NTP}" 1 | dd of="${out_file}" seek=$(( $off + 0 )) bs=1 count=1 conv=notrunc 2> /dev/null
+        # Increment offset
+        off=$(( $off +  $BMC_CFG_SUBTYPE_NTP_LEN))
+      fi
+    done
+  fi
+
+  # Push PCP Type and PCP Length for BMC config.
+  to_bytes "$(( $cfg_len - $PCP_TYPE_LEN - $PCP_LENGTH_LEN ))" $PCP_LENGTH_LEN | dd of="${out_file}" seek=$(( 0 + $PCP_TYPE_LEN )) bs=1 count=$PCP_LENGTH_LEN conv=notrunc 2> /dev/null
+  to_bytes "${PCP_TYPE_BMC_CFG}" $PCP_TYPE_LEN | dd of="${out_file}" seek=0 bs=1 count=$PCP_TYPE_LEN conv=notrunc 2> /dev/null
+
+  return
+}
+
+# Refer to this page to obtain info on configuration binary format.
+# https://confluence.nvidia.com/pages/viewpage.action?spaceKey=SW&title=BlueField+Platform+Configuration
+cfg_push_pch()
+{
+  local out_file=$1
+  local data_len=$2
+
+  #
+  # PCH format (length 128 bytes):
+  #
+  # FP          (off:  0, len:  8 bytes)
+  # HdrVersion  (off:  8, len:  4 bytes)
+  # HdrLen      (off: 12, len:  4 bytes)
+  # HdrType	    (off: 16, len:  4 bytes)
+  #	Reserved    (off: 20, len:  4 bytes)
+  #	Length	    (off: 24, len:  4 bytes)
+  #	Version     (off: 28, len:  4 bytes)
+  #	Flags       (off: 32, len:  4 bytes)
+  #	Owner		    (off: 36, len:  1 bytes)
+  #	Reserved    (off: 37, len:  3 bytes)
+  #	UUID/OPN	  (off: 40, len: 32 bytes)
+  #	DataPtr     (off: 72, len:  4 bytes)
+  #	AuthDataPtr (off: 76, len:  4 bytes)
+  #	Reserved    (off: 80, len: 48 bytes)
+  #
+
+  local hdr_off=0
+  local length=$data_len
+  local version=$PCP_VERSION
+  local payload_data_off=$PCH_HEADER_LEN
+  local auth_data_off=0
+
+  [ -s "${out_file}" ] && rm -f ${out_file}
+
+  # Create empty header file.
+  dd if=/dev/zero of=${out_file} count=${PCH_HEADER_LEN} bs=1 2> /dev/null
+
+  # Populate header
+  to_bytes "${PCH_HEADER_VERSION}" 4 | dd of="${out_file}" seek="$(( $hdr_off + 8 ))" bs=1 count=4 conv=notrunc 2> /dev/null
+  to_bytes "${PCH_HEADER_LEN}" 4 | dd of="${out_file}" seek="$(( $hdr_off + 12 ))" bs=1 count=4 conv=notrunc 2> /dev/null
+  to_bytes "${PCH_HEADER_TYPE}" 4 | dd of="${out_file}" seek="$(( $hdr_off + 16 ))" bs=1 count=4 conv=notrunc 2> /dev/null
+  to_bytes "${length}" 4 | dd of="${out_file}" seek="$(( $hdr_off + 24 ))" bs=1 count=4 conv=notrunc 2> /dev/null
+  to_bytes "${version}" 4 | dd of="${out_file}" seek="$(( $hdr_off + 28 ))" bs=1 count=4 conv=notrunc 2> /dev/null
+  to_bytes "${payload_data_off}" 4 | dd of="${out_file}" seek="$(( $hdr_off + 72 ))" bs=1 count=4 conv=notrunc 2> /dev/null
+  to_bytes "${auth_data_off}" 4 | dd of="${out_file}" seek="$(( $hdr_off + 76 ))" bs=1 count=4 conv=notrunc 2> /dev/null
+
+  # Write finger print
+  local fp=$(printf ${PCH_FP} | xxd -p | xxd -r -p | sed -e 's/[0-9A-F]\{2\}/&\\x/g' -e 's/\\x$//')
+  printf "${fp}" | dd of="${out_file}" seek="$(( $hdr_off + 0 ))" bs=1 count=8 conv=notrunc 2> /dev/null
+
+  return
+}
+
+# Convert input configuration to a binary file.
 #
 # When 'bfcfg' cannot be executed from Arm operating
 # system, an alternative is to run the command on external
@@ -1303,40 +1968,494 @@ sb_cfg()
 # a BFB file and applied from external host.
 cfg2bin()
 {
+  local out_file=$(basename $1).bin
   local cfg_file=$1
-  local bin_file=$(basename $1).bin
-  local tmp_bin_file=/tmp/.bfcfg-mfg.bin
+
+  local mfg_cfg_bin='/tmp/.mfg_cfg.cfg'
+  local pch_cfg_bin='/tmp/.pch_cfg.bin'
+  local bmc_cfg_bin='/tmp/.bmc_cfg.bin'
+  local arm_cfg_bin='/tmp/.arm_cfg.bin'
+  local pcp_cfg_bin="$mfg_cfg_bin"
+  local cfg_len=0
 
   # Source the configuration if exists.
-  if [ -e "${cfg_file}" ]; then
-    . ${cfg_file}
-  else
-    echo "error: missing configuration file."
-    return
+  if [ ! -s "${cfg_file}" ]; then
+    echo "error: invalid configuration '${cfg_file}'."
+    exit 1
   fi
+
+  # Cleanup temp files.
+  rm -f $mfg_cfg_bin $pch_cfg_bin $arm_cfg_bin $bmc_cfg_bin
+  [ -f "${out_file}" ] && rm -f ${out_file}
 
   # Reset variables
   mfg_sysfs_cfg_done=0
   has_redfish_cfg=0
   has_sys_cfg=0
 
+  # Source the configuration if exists.
+  # shellcheck source=/dev/null
+  . ${cfg_file}
+
   start_log_file
 
   # Export config to bin
-  mfg_cfg_to_bin ${tmp_bin_file}
+  [ "$skip_mfg" -eq 0 ] && mfg_cfg_to_bin ${mfg_cfg_bin}
+  arm_cfg_to_bin ${arm_cfg_bin}
+  bmc_cfg_to_bin ${bmc_cfg_bin}
   has_bin=0
 
-  [ -f "${tmp_bin_file}" ] && has_bin=1
+  if [ ! -s "${mfg_cfg_bin}" ] \
+    && [ ! -s "${arm_cfg_bin}" ] \
+    && [ ! -s "${bmc_cfg_bin}" ]; then
+      echo "** error: failed to write configuration."
+      exit 1
+  fi
 
-  if [ ${has_bin} -eq 1 ]; then
-    mv ${tmp_bin_file} ${bin_file}
-    rm -f ${tmp_bin_file}
-    echo ""
-    echo "$0: configuration blob written to ${bin_file}"
-  else
-    echo "error: failed to write configuration."
+  # Generate the 4KB MFG binary (legacy), if needed.
+  # This aims to conserve backward compatibility with old firmware.
+  if [ ! -f "${mfg_cfg_bin}" ]; then
+    # Create empty header file.
+    dd if=/dev/zero of=${mfg_cfg_bin} count=4096 bs=1 2> /dev/null
+  fi
+
+  if [ -f "${arm_cfg_bin}" ] \
+    || [ -f "${bmc_cfg_bin}" ] ; then
+    # Add PCH header filename to the list.
+    pcp_cfg_bin="$pcp_cfg_bin $pch_cfg_bin"
+
+    if [ -f "${arm_cfg_bin}" ]; then
+      cfg_len=$(( $cfg_len + $(stat -c%s "$arm_cfg_bin") ))
+      pcp_cfg_bin="$pcp_cfg_bin $arm_cfg_bin"
+    fi
+
+    if [ -f "${bmc_cfg_bin}" ]; then
+      cfg_len=$(( $cfg_len + $(stat -c%s "$bmc_cfg_bin") ))
+      pcp_cfg_bin="$pcp_cfg_bin $bmc_cfg_bin"
+    fi
+
+    # Push header after the legacy blob
+    cfg_push_pch ${pch_cfg_bin} ${cfg_len}
+  fi
+
+  # Generate binary file
+  cat $pcp_cfg_bin > $out_file
+
+  # Cleanup temp files.
+  rm -f $mfg_cfg_bin $pch_cfg_bin $arm_cfg_bin $bmc_cfg_bin
+
+  echo ""
+  echo "$0: configuration blob written to ${out_file}"
+
+  return
+}
+
+mfg_cfg_get_value()
+{
+  local out_file=$1
+  local name=$2
+  local offset=$3
+  local size=$4
+  local in_file=$5
+  local value=0
+
+  if [ -f "${in_file}" ]; then
+    if [ "$name" = "MFG_OOB_MAC" ]; then
+      value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | xxd -p)
+      if [ "$value" != "000000000000" ]; then
+        mac=$(echo $value | sed -e 's/../&:/g' -e 's/:$//')
+        echo "$name=$mac" >> ${out_file}
+      fi
+
+    else
+      #value=$(tail -c+${offset} ${in_file} | head -c${size})
+      value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | tr -d '\0')
+      if [ "$name" = "MFG_SYS_MFR" ] \
+        || [ "$name" = "MFG_SYS_PDN" ] \
+        || [ "$name" = "MFG_BSB_MFR" ] \
+        || [ "$name" = "MFG_BSB_PDN" ]; then
+        if [ -n "$value" ]; then echo "$name=\"$value\"" >> ${out_file}; fi
+      else
+        if [ -n "$value" ]; then echo "$name=$value" >> ${out_file}; fi
+      fi
+    fi
+
+  fi
+
+  return
+}
+
+# Refer to this page to obtain info on configuration binary format.
+# https://confluence.nvidia.com/pages/viewpage.action?spaceKey=SW&title=BlueField+Platform+Configuration
+mfg_to_txt()
+{
+  local in_file=$1
+  local off=$2
+  local out_file=$3
+
+  [ ! -s "${in_file}" ] && return
+
+  local in_file_len=$(stat -c%s "$in_file")
+  [ $in_file_len -lt 4096 ] && return
+
+  mfg_cfg_get_value ${out_file} "MFG_OOB_MAC" "$(( $off + 0 ))" 6 ${in_file}
+  mfg_cfg_get_value ${out_file} "MFG_OPN" "$(( $off + 8 ))" 24 ${in_file}
+  mfg_cfg_get_value ${out_file} "MFG_SKU" "$(( $off + 32 ))" 24 ${in_file}
+  mfg_cfg_get_value ${out_file} "MFG_MODL" "$(( $off + 56 ))" 24 ${in_file}
+  mfg_cfg_get_value ${out_file} "MFG_SN" "$(( $off + 80 ))" 24 ${in_file}
+  mfg_cfg_get_value ${out_file} "MFG_UUID" "$(( $off + 104 ))" 40 ${in_file}
+  mfg_cfg_get_value ${out_file} "MFG_REV" "$(( $off + 144 ))" 8 ${in_file}
+
+  mfg_cfg_get_value ${out_file} "MFG_SYS_MFR" "$(( $off + 256 ))" 24 ${in_file}
+  mfg_cfg_get_value ${out_file} "MFG_SYS_PDN" "$(( $off + 280 ))" 24 ${in_file}
+  mfg_cfg_get_value ${out_file} "MFG_SYS_VER" "$(( $off + 304 ))" 512 ${in_file}
+
+  mfg_cfg_get_value ${out_file} "MFG_BSB_MFR" "$(( $off + 816 ))" 24 ${in_file}
+  mfg_cfg_get_value ${out_file} "MFG_BSB_PDN" "$(( $off + 840 ))" 24 ${in_file}
+  mfg_cfg_get_value ${out_file} "MFG_BSB_VER" "$(( $off + 864 ))" 24 ${in_file}
+  mfg_cfg_get_value ${out_file} "MFG_BSB_SN" "$(( $off + 888 ))" 24 ${in_file}
+
+  echo "" >> ${out_file}
+
+  return
+}
+
+# Refer to this page to obtain info on configuration binary format.
+# https://confluence.nvidia.com/pages/viewpage.action?spaceKey=SW&title=BlueField+Platform+Configuration
+pch_to_txt()
+{
+  local in_file=$1
+  local off=$2
+  local out_file=$3
+
+  [ ! -s "${in_file}" ] && return
+
+  local fp=$(dd if=${in_file} skip=$(( $off + 0 )) count=8 bs=1 2>/dev/null | tr -d '\0')
+  if [ "$fp" != "$PCH_FP" ]; then
+    echo "** error: cannot find valid config!"
+    exit 1
+  fi
+
+  local version=$(to_integer ${in_file} $(( $off + 28 )) 4)
+  echo "VERSION=$version" >> ${out_file}
+  echo "" >> ${out_file}
+}
+
+# Receives the platform config binary, parse it and dump it to text.
+#
+# Refer to this page to obtain info on configuration binary format.
+# https://confluence.nvidia.com/pages/viewpage.action?spaceKey=SW&title=BlueField+Platform+Configuration
+pcp_cfg_to_txt()
+{
+  local in_file=$1
+  local out_file=$2
+
+  local cfg_len=0
+  local type=0
+  local length=0
+  local subtype=0
+  local limit=0
+
+  [ ! -s "${out_file}" ] && rm -f ${out_file}
+  [ ! -s "${in_file}" ] && return
+
+  in_file_len=$(stat -c%s "$in_file")
+
+  local off=0
+
+  # Skip MFG sections
+  off=$(( $off + 4096 ))
+
+  # Print header info
+  pch_to_txt ${in_file} $off ${out_file}
+
+  # Print MFG data
+  mfg_to_txt ${in_file} 0 ${out_file}
+
+  # Skip header
+  off=$(( $off + $PCH_HEADER_LEN ))
+
+  while : ; do
+    # Read type
+    type=$(to_integer ${in_file} $(( $off + 0 )) $PCP_TYPE_LEN)
+    length=$(to_integer ${in_file} $(( $off + $PCP_TYPE_LEN )) $PCP_LENGTH_LEN)
+
+    off=$(( $off + $PCP_TYPE_LEN + $PCP_LENGTH_LEN ))
+    limit=$(( $length + $off ))
+
+    if [ $type -eq "$PCP_TYPE_ARM_CFG" ]; then
+      while : ; do
+        # Read subtype and length
+        subtype=$(to_integer ${in_file} $(( $off + 0 )) 1)
+
+        if [ $subtype -eq "$ARM_CFG_SUBTYPE_CTL" ]; then
+          arm_cfg_get_value ${out_file} "CTL_RESET_ALL_SYS" "$(( $off + 4 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "CTL_RESET_ALL_BOOT" "$(( $off + 5 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "CTL_RESET_ALL_MISC" "$(( $off + 6 ))" 1 ${in_file}
+          off=$(( $off +  $ARM_CFG_SUBTYPE_CTL_LEN))
+
+        elif [ $subtype -eq "$ARM_CFG_SUBTYPE_SYS" ]; then
+          arm_cfg_get_value ${out_file} "SYS_ENABLE_SMMU" "$(( $off + 24 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_DISABLE_SPMI" "$(( $off + 25 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_ENABLE_2ND_EMMC" "$(( $off + 26 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_BOOT_PROTECT" "$(( $off + 27 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_ENABLE_SPCR" "$(( $off + 32 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_DISABLE_PCIE" "$(( $off + 33 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_ENABLE_OPTEE" "$(( $off + 34 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_DISABLE_TMFF" "$(( $off + 35 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_ENABLE_I2C0" "$(( $off + 36 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_DISABLE_FORCE_PXE_RETRY" "$(( $off + 37 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_ENABLE_BMC_FIELD_MODE" "$(( $off + 38 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_CE_THRESHOLD" "$(( $off + 45 ))" 4 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_DISABLE_HEST" "$(( $off + 49 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_L3_CACHE_PARTITION_LEVEL" "$(( $off + 50 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_DISABLE_AUTO_BOOT_REFRESH" "$(( $off + 66 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_DISPLAY_BMC_NET_CONFIG" "$(( $off + 67 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_ENABLE_REDFISH" "$(( $off + 68 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_RTCSYNC" "$(( $off + 69 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "MFG_PLAT_MODE" "$(( $off + 74 ))" 1 ${in_file}
+          off=$(( $off +  $ARM_CFG_SUBTYPE_SYS_LEN))
+
+        elif [ $subtype -eq "$ARM_CFG_SUBTYPE_BOOT" ]; then
+          idx=$(to_integer ${in_file} $(( $off + 3 )) 1)
+          arm_cfg_get_value ${out_file} "BOOT${idx}" "$(( $off + 4 ))" 60 ${in_file}
+          arm_cfg_get_value ${out_file} "BOOT${idx}_DESC" "$(( $off + 64 ))" 64 ${in_file}
+          arm_cfg_get_value ${out_file} "BOOT${idx}_DEVPATH" "$(( $off + 128 ))" 256 ${in_file}
+          arm_cfg_get_value ${out_file} "BOOT${idx}_ARGS" "$(( $off + 384 ))" 256 ${in_file}
+          off=$(( $off +  $ARM_CFG_SUBTYPE_BOOT_LEN))
+
+        elif [ $subtype -eq "$ARM_CFG_SUBTYPE_MISC" ]; then
+          arm_cfg_get_value ${out_file} "NET_RSHIM_MAC" "$(( $off + 4 ))" 6 ${in_file}
+          arm_cfg_get_value ${out_file} "NET_DHCP_IPV6_DUID" $(( $off + 10 )) 1 "${in_file}"
+          arm_cfg_get_value ${out_file} "FACTORY_DEFAULT_DHCP_BEHAVIOR" "$(( $off + 16 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "PXE_DHCP_CLASS_ID" "$(( $off + 17 ))" 63 ${in_file}
+          arm_cfg_get_value ${out_file} "BF_BUNDLE_VERSION" "$(( $off + 80 ))" 128 ${in_file}
+          off=$(( $off +  $ARM_CFG_SUBTYPE_MISC_LEN))
+
+        fi
+
+        [[ $off -ge $limit ]] && break
+      done
+
+    elif [ $type -eq "$PCP_TYPE_BMC_CFG" ]; then
+      while : ; do
+        # Read subtype and length
+        subtype=$(to_integer ${in_file} $(( $off + 0 )) 1)
+
+        if [ $subtype -eq "$BMC_CFG_SUBTYPE_MISC" ]; then
+          bmc_cfg_get_value ${out_file} "BMC_EXPIRE_PASSWORD_ON_FIRST_LOGIN" "$(( $off + 3 ))" 1 ${in_file}
+          bmc_cfg_get_value ${out_file} "BMC_PASSWORD_MINIMUM_LENGTH" "$(( $off + 4 ))" 2 ${in_file}
+          bmc_cfg_get_value ${out_file} "BMC_LOCK_ACCOUNT_MAX_RETRY" "$(( $off + 6 ))" 2 ${in_file}
+          bmc_cfg_get_value ${out_file} "BMC_SOL_ENABLE" "$(( $off + 8 ))" 1 ${in_file}
+          bmc_cfg_get_value ${out_file} "BMC_SOL_CHARACTER_SEND_THRESHOLD" "$(( $off + 9 ))" 2 ${in_file}
+          bmc_cfg_get_value ${out_file} "BMC_SOL_CHARACTER_ACCUMULATE_LEVEL" "$(( $off + 11 ))" 2 ${in_file}
+          bmc_cfg_get_value ${out_file} "BMC_WEBUI_ENABLE" "$(( $off + 16 ))" 1 ${in_file}
+          bmc_cfg_get_value ${out_file} "BMC_SEED" "$(( $off + 24 ))" 64 ${in_file}
+          bmc_cfg_get_value ${out_file} "BMC_IPMI_ACCOUNTS" "$(( $off + 88 ))" 512 ${in_file}
+          off=$(( $off + $BMC_CFG_SUBTYPE_MISC_LEN))
+
+        elif [ $subtype -eq "$BMC_CFG_SUBTYPE_USER_DEFAULT" ]; then
+          idx=$(to_integer ${in_file} $(( $off + 3 )) 1)
+          bmc_cfg_get_value ${out_file} "BMC_USER_DEFAULT_PRIVILEGE_${idx}" "$(( $off + 8 ))" 64 ${in_file}
+          bmc_cfg_get_value ${out_file} "BMC_USER_DEFAULT_USERNAME_${idx}" "$(( $off + 72 ))" 64 ${in_file}
+          bmc_cfg_get_value ${out_file} "BMC_USER_DEFAULT_PASSWORD_${idx}" "$(( $off + 136 ))" 128 ${in_file}
+          off=$(( $off +  $BMC_CFG_SUBTYPE_USER_DEFAULT_LEN))
+
+        elif [ $subtype -eq "$BMC_CFG_SUBTYPE_NTP" ]; then
+          idx=$(to_integer ${in_file} $(( $off + 7 )) 1)
+          bmc_cfg_get_value ${out_file} "BMC_NTP_${idx}" "$(( $off + 8 ))" 256 ${in_file}
+          off=$(( $off + $BMC_CFG_SUBTYPE_NTP_LEN))
+
+        fi
+
+        [[ $off -ge $limit ]] && break
+      done
+
+    else
+        # Type nt supported, thus skip!
+        off=$(( $off + $length ))
+
+    fi
+
+    [[ $off -ge $in_file_len ]] && break
+  done
+
+  return
+}
+
+#
+# Fixed parameters for BFB and capsule files.
+# MUST be consistent with the definition of BFB header
+# format and UEFI capsule header format.
+#
+# The BFB header magic number "BF^B^S" (0x13026642)
+BFB_MAGIC="42660213"
+# Unsigned capsule header length.
+CAP_HEADER_LEN=168
+CAP_GUID="edd5cb6d2de8444cbda17194199ad92a"
+
+# This function doesn't support signed capsule files.
+parse_cap()
+{
+  incap=$1
+  outbin=$2
+
+  # Check UEFI capsule GUID
+  local capguid=$(dd if=${incap} skip=0 count=16 bs=1 2> /dev/null | xxd -p)
+  [ "$capguid" != "$CAP_GUID" ] && return
+
+  log_msg "bin2cfg: CAP file detected."
+
+  echo "Parsing EFI Capsule $incap..."
+
+  # Convert capsule length in hex to integer.
+  capfile_len=$(stat -c%s "$incap")
+  # Quick check on the capsule length.
+  if [ $capfile_len -le $CAP_HEADER_LEN ]; then
+    echo "** error: invalid capsule file length!"
     return
   fi
+
+  # Calculate capsule header size. The header is skipped.
+  # @FIXME: Determine header length from capsule.
+  capfile_skip=$CAP_HEADER_LEN
+  # Extract capsule payload.
+  dd if=${incap} of=${outbin} bs=1 count=$(( $capfile_len - $CAP_HEADER_LEN )) skip=$capfile_skip 2> /dev/null
+
+  return
+}
+
+parse_bfb()
+{
+  local inbfb=$1
+  local outbin=$2
+  local tmp_cap_file='/tmp/.bf.cfg.cap.tmp'
+
+  local bfb_hdr_len=24
+  #
+  # The Capsule file parameters within the BFB header.
+  #
+  # Fields (swapped)
+  #  Minor             : 2 (4 bits)
+  #  Major             : 1 (4 bits)
+  #  Next image version: X (4 bits), where X in {0, 1, 2}
+  #  Reserved          : 0 (4 bits)
+  #  Header length     : 3 (4 bits)
+  #  Curr image version: 0 (4 bits)
+  #  Image Identifier  : 52 (8 bits)
+  #
+  # Only a single capsule file is expected within the
+  # BFB file and thus the Next image version should be
+  # X=0.
+  #
+  local image_id_0=21003034
+  local image_id_1=21103034
+  local image_id_2=21203034
+
+  # Check magic number
+  local magic=$(dd if=${inbfb} skip=0 count=4 bs=1 2>/dev/null | xxd -p)
+  [ "$magic" != "$BFB_MAGIC" ] && return
+
+  log_msg "bin2cfg: BFB file detected."
+
+  echo "Parsing BFB $inbfb..."
+
+  local inbfb_len=$(stat -c%s "$inbfb")
+  local off=0
+
+  while : ; do
+
+    [[ $off -ge $inbfb_len ]] && break;
+
+    magic=$(dd if=${inbfb} skip=$(( $off + 0 )) count=4 bs=1 2>/dev/null | xxd -p)
+    local id=$(dd if=${inbfb} skip=$(( $off + 4 )) count=4 bs=1 2>/dev/null | xxd -p)
+
+    # Read length and reverse byte order to obtain the length in hex.
+    # The 'sed' command can be replaced with commands such as
+    # 'tac' or 'nl | sort -nr | cut -f 2-'.
+    local len=$(to_integer ${inbfb} $(( $off + 8 )) 4)
+    # Pad the length if needed.
+    # Round-up to next greater multiple of 8
+    local len_pad=$(( ($len + 7) & (-8) ))
+    # Skip BFB header
+    off=$(( $off +  $bfb_hdr_len ))
+
+    #
+    # Check if the magic number was previously found
+    # and the next word matches the capsule image
+    # identifier.
+    #
+
+    if [ "$magic" != "$BFB_MAGIC" ]; then
+      off=$(( $off + $len_pad ))
+      continue
+    fi
+
+    if [ "$id" != "$image_id_0" ] \
+        && [ "$id" != "$image_id_1" ] \
+        && [ "$id" != "$image_id_2" ]; then
+      off=$(( $off + $len_pad ))
+      continue
+    fi
+
+    # If we reach here, it means that the capsule file is found.
+    # Extract it and parse it.
+    dd if=${inbfb} of=${tmp_cap_file} bs=1 count=$len skip=$off 2> /dev/null
+    parse_cap ${tmp_cap_file} ${outbin}
+    # Cleanup temp file
+    rm -f "${tmp_cap_file}"
+    break
+
+  done
+
+  return
+}
+
+# IMPORTANT NOTE: This function can be executed from OpenBMC,
+# thus it is important to keep commands and subroutines portable
+# to various shell/bash environment.
+bin2cfg()
+{
+  local out_file=$(basename $1).cfg
+  local bin_file=$1
+  local tmp_cfg_file='/tmp/.bf.cfg.tmp'
+  local tmp_bin_file='/tmp/.bf.bin.tmp'
+
+  # Source the configuration if exists.
+  if [ ! -s "${bin_file}" ]; then
+    echo "error: invalid binary '${bin_file}'."
+    exit 1
+  fi
+
+  # Cleanup temp file
+  [ -f "${tmp_cfg_file}" ] && rm -f "${tmp_cfg_file}"
+  [ -f "${tmp_bin_file}" ] && rm -f "${tmp_bin_file}"
+
+  #
+  # Check binary - supported binaries are BFB, CAP and CFG.
+  #
+  parse_bfb ${bin_file} ${tmp_bin_file}
+  if [ ! -s "${tmp_bin_file}" ]; then
+    parse_cap ${bin_file} ${tmp_bin_file}
+  fi
+
+  if [ -s "${tmp_bin_file}" ]; then
+    pcp_cfg_to_txt ${tmp_bin_file} ${tmp_cfg_file}
+  else
+    pcp_cfg_to_txt ${bin_file} ${tmp_cfg_file}
+  fi
+
+  if [ -s "${tmp_cfg_file}" ]; then
+    mv ${tmp_cfg_file} ${out_file}
+    rm -f ${tmp_cfg_file} ${tmp_bin_file}
+    echo ""
+    echo "$0: configuration written to ${out_file}"
+  else
+    echo "** error: failed to read configuration."
+    exit 1
+  fi
+
+  return
 }
 
 start_log_file()
@@ -1393,11 +2512,17 @@ print_osarg()
 
 usage()
 {
-  echo "syntax: bfcfg [--help|-h] [--dump|-d] [--dump-osarg|o] [--part-info|-p] [--cfg2bin|-c <cfg_file>]"
+  echo "syntax: bfcfg [--help|-h] [--version|-v] [--dump|-d] [--dump-osarg|o] [--part-info|-p]"
+  echo "              [--hscv|-h] [--cfg2bin|-c <cfg_file>] [--bin2cfg|-b <bin_file> [--skip-mfg]]"
 }
 
+has_cfg2bin=0
+has_bin2cfg=0
+infile=
+skip_mfg=0
+
 # Parse the arguments.
-options=$(getopt -n bfcfg -o dohpc: -l dump,dump-osarg,help,part-info,cfg2bin: -- "$@")
+options=$(getopt -n bfcfg -o dohvpc:b:s -l dump,dump-osarg,help,part-info,cfg2bin:,bin2cfg:,skip-mfg,version,hscv -- "$@")
 eval set -- "$options"
 while [ "$1" != -- ]; do
   case $1 in
@@ -1405,11 +2530,23 @@ while [ "$1" != -- ]; do
     --dump-osarg|o) print_osarg; exit 0;;
     --help|-h) usage; exit 0 ;;
     --part-info|-p) part_info; exit 0 ;;
-    --cfg2bin|-c) cfg2bin $2; exit 0 ;;
+    --skip-mfg) skip_mfg=1 ;;
+    --cfg2bin|-c) has_cfg2bin=1; infile=$2 ;;
+    --bin2cfg|-b) has_bin2cfg=1; infile=$2 ;;
+    --version|-v) echo "$0 version '$bfcfg_version'"; exit 0 ;;
+    --hscv|-s) echo "$0 highest supported config version: $PCP_VERSION"; exit 0 ;;
   esac
   shift
 done
 shift
+
+if [ "$has_cfg2bin" -eq 1 ]; then
+  cfg2bin $infile
+  exit 0
+elif [ "$has_bin2cfg" -eq 1 ]; then
+  bin2cfg $infile
+  exit 0
+fi
 
 # Source the configuration if exists.
 # shellcheck source=/dev/null
