@@ -653,19 +653,21 @@ sys_cfg_one_byte()
 # Below are the offsets defined in UEFI which is 4(fixed header) plus the offset
 # of the variable within the BfSysCfg struct. These offsets are not supposed to
 # change in order to be backward compatible with previous releases.
-#   VARIABLE(Name)       OFFSET(Byte)  SIZE(Byte)
-#   SYS_ENABLE_SMMU      24            1
-#   SYS_DISABLE_SPMI     25            1
-#   SYS_ENABLE_2ND_EMMC  26            1
-#   SYS_BOOT_PROTECT     27            1
-#   SYS_ENABLE_SPCR      32            1
-#   SYS_DISABLE_PCIE     33            1
-#   SYS_ENABLE_OPTEE     34            1
-#   SYS_DISABLE_TMFF     35            1
-#   SYS_ENABLE_I2C0      36            1
-#   SYS_DISABLE_FORCE_PXE_RETRY  37    1
-#   SYS_ENABLE_BMC_FIELD_MODE    38    1
-#   SYS_DISABLE_HEST     49            1
+#   VARIABLE(Name)                 OFFSET(Byte)  SIZE(Byte)
+#   SYS_ENABLE_SMMU                24  1
+#   SYS_DISABLE_SPMI               25  1
+#   SYS_ENABLE_2ND_EMMC            26  1
+#   SYS_BOOT_PROTECT               27  1
+#   SYS_ENABLE_SPCR                32  1
+#   SYS_DISABLE_PCIE               33  1
+#   SYS_ENABLE_OPTEE               34  1
+#   SYS_DISABLE_TMFF               35  1
+#   SYS_ENABLE_I2C0                36  1
+#   SYS_DISABLE_FORCE_PXE_RETRY    37  1
+#   SYS_ENABLE_BMC_FIELD_MODE      38  1
+#   SYS_DISABLE_HEST               49  1
+#   SYS_L3_CACHE_PART_LEVEL        50  2
+#   SYS_ENABLE_I2C3                52  1
 #   SYS_DISABLE_AUTO_BOOT_REFRESH  66  1
 #   SYS_DISPLAY_BMC_NET_CONFIG     67  1
 #
@@ -696,6 +698,7 @@ sys_cfg()
   sys_cfg_one_byte ${tmp_file} "DISABLE_FORCE_PXE_RETRY" 37 "${SYS_DISABLE_FORCE_PXE_RETRY}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_BMC_FIELD_MODE" 38 "${SYS_ENABLE_BMC_FIELD_MODE}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_HEST" 49 "${SYS_DISABLE_HEST}"
+  sys_cfg_one_byte ${tmp_file} "ENABLE_I2C3" 52 "${SYS_ENABLE_I2C3}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_AUTO_BOOT_REFRESH" 66 "${SYS_DISABLE_AUTO_BOOT_REFRESH}"
   sys_cfg_one_byte ${tmp_file} "DISPLAY_BMC_NET_CONFIG" 67 "${SYS_DISPLAY_BMC_NET_CONFIG}"
 
