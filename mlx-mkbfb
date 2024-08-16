@@ -146,6 +146,21 @@ class BadHdr(Exception):
         return self.msg
 
 
+class FormatError(Exception):
+    """
+    Exception raised when we encounter a format error in the boot stream.
+    """
+    pass
+
+
+class CRCMismatch(Exception):
+    """
+    Exception raised when the CRC of an image does not match the CRC
+    stored in the image header.
+    """
+    pass
+
+
 #
 # Currently we produce/consume a little-endian boot stream.  If we
 # ever need to change that, you'll need to modify the code below that
@@ -391,7 +406,7 @@ class Image:
 
         self.bits = instream.read(length)
         if len(self.bits) != length:
-            raise Exception("Image ID %d: stream corrupted, image too short" %
+            raise FormatError("Image ID %d: stream corrupted, image too short" %
                             self.header.get_image_id())
 
         crc = binascii.crc32(self.bits, 0)
@@ -400,7 +415,7 @@ class Image:
         crc &= 0xFFFFFFFF
 
         if crc != self.header.get_image_crc():
-            raise Exception("Image ID %d: header CRC of 0x%08x does "
+            raise CRCMismatch("Image ID %d: header CRC of 0x%08x does "
                             "not match calculated CRC of 0x%08x" %
                             (self.header.get_image_id(),
                              self.header.get_image_crc(), crc))
@@ -568,6 +583,11 @@ def dump_stream(infn, do_dump, do_extract, prefix, images):
     """
 
     inf = open(infn, "rb")
+    inf.seek(0, os.SEEK_END)
+    file_len = inf.tell()
+    if file_len < ImageHdr.length:
+        raise FormatError("BFB too short")
+    inf.seek(0, os.SEEK_SET)
 
     while True:
         try:
@@ -741,7 +761,7 @@ def main(argv):
     #
     parser = OptionParser(
             usage="\n  %prog [ options ] [ INFILE ] [ INFILE2 ] OUTFILE\n"
-                  "  %prog -[dx] [ options ] INFILE\n"
+                  "  %prog -[dxc] [ options ] INFILE\n"
                   "  %prog [ -h | --help ]",
             description="%prog creates or dumps a BlueField boot stream.")
     parser.add_option(
@@ -750,6 +770,9 @@ def main(argv):
     parser.add_option(
             "-x", "--extract", dest="x", action="store_true",
             help="extract images from INFILE and write to files")
+    parser.add_option(
+            "-c", "--check", dest="c", action="store_true",
+            help="check integrity for images within INFILE")
     parser.add_option(
             "-n", "--image-name", dest="n", action="store", type="string",
             metavar="INM", default="",
@@ -813,20 +836,28 @@ def main(argv):
         global verbose
         verbose = True
 
-    if (opt.d or opt.x) and len(args) > 1:
+    if (opt.d or opt.x or opt.c) and len(args) > 1:
         parser.error("no output file allowed with -d/-x")
 
     if len(args) > 3:
         parser.error("only two input and one output file allowed")
 
-    if opt.d or opt.x or opt.f:
+    if opt.d or opt.x or opt.f or opt.c:
         if opt.e:
-            parser.error("-e not applicable with -d/-x/-s")
+            parser.error("-e not applicable with -d/-x/-s/-c")
         if opt.images:
-            parser.error("cannot specify images with -d/-x/-s")
+            parser.error("cannot specify images with -d/-x/-s/-c")
 
-    if opt.d or opt.x:
-        dump_stream(args[0], opt.d, opt.x, opt.p, opt.n)
+    if opt.d or opt.x or opt.c:
+        try:
+            dump_stream(args[0], opt.d, opt.x, opt.p, opt.n)
+        except (NoHdr, BadHdr, FormatError, CRCMismatch) as e:
+            if opt.c:
+                print("BFB check failed (%s): %s" %
+                      (e.__class__.__name__, e), file=sys.stderr)
+                sys.exit(1)
+            else:
+                raise
     elif opt.f is not None:
         if len(args) != 2:
             parser.error("--filter/-f: must specify exactly one input file and "
