@@ -1,6 +1,6 @@
 .TH MLX-MKBFB 1 "June 2020"
 .SH NAME
-mlx-mkbfb \- Create, dump, and update BlueField BFB files
+mlx-mkbfb \- Create, dump, check, and update BlueField BFB files
 .SH SYNOPSIS
 .B mlx-mkbfb
 .RB [ \-\-help | \-h ]
@@ -11,7 +11,7 @@ mlx-mkbfb \- Create, dump, and update BlueField BFB files
 .I OUTFILE
 .PP
 .B mlx-mkbfb
-.RB -[ x | d ]
+.RB -[ x | d | c ]
 [options...]
 .I INFILE
 .PP
@@ -29,7 +29,7 @@ pushed over the rshim device, or installed directly to one of two eMMC boot
 partitions. To install to or dump BFB files from the eMMC, use
 .BR mlxbf\-bootctl (8).
 .PP
-When not using \-x, \-d or \-f,
+When not using \-x, \-d, \-c, or \-f,
 .B mlx-mkbfb
 will use each INFILE and images specified by
 .B Image Options
@@ -65,6 +65,8 @@ or
 Print a listing of images inside INFILE.
 .IP "-x | --extract"
 Extract all images from INFILE and write to files in the current directory.
+.IP "-c | --check"
+Check the integrity of INFILE.
 .IP "-p | --prefix PREFIX"
 Prefix for files extracted by \-x, default is "dump\-".
 .IP "-f | --filter VERSION"
@@ -86,11 +88,11 @@ Provide more verbose output.
 Expert mode. Orders images within OUTFILE to match the order they are specified
 on the command line by
 .BR "Image Options" .
-This option cannot be used with -x or -d.
+This option cannot be used with -x, -d, or -c.
 .PP
 .B Image Options
 .PP
-When running without options \-d or \-x, image options control which images
+When running without options \-d, \-x, or \-c, image options control which images
 are added to OUTFILE. All image options are of one of the following forms:
 .PP
 .RS
