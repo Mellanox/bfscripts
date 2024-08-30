@@ -654,22 +654,24 @@ sys_cfg_one_byte()
 # of the variable within the BfSysCfg struct. These offsets are not supposed to
 # change in order to be backward compatible with previous releases.
 #   VARIABLE(Name)                 OFFSET(Byte)  SIZE(Byte)
-#   SYS_ENABLE_SMMU                24  1
-#   SYS_DISABLE_SPMI               25  1
-#   SYS_ENABLE_2ND_EMMC            26  1
-#   SYS_BOOT_PROTECT               27  1
-#   SYS_ENABLE_SPCR                32  1
-#   SYS_DISABLE_PCIE               33  1
-#   SYS_ENABLE_OPTEE               34  1
-#   SYS_DISABLE_TMFF               35  1
-#   SYS_ENABLE_I2C0                36  1
-#   SYS_DISABLE_FORCE_PXE_RETRY    37  1
-#   SYS_ENABLE_BMC_FIELD_MODE      38  1
-#   SYS_DISABLE_HEST               49  1
-#   SYS_L3_CACHE_PART_LEVEL        50  2
-#   SYS_ENABLE_I2C3                52  1
-#   SYS_DISABLE_AUTO_BOOT_REFRESH  66  1
-#   SYS_DISPLAY_BMC_NET_CONFIG     67  1
+#   SYS_ENABLE_SMMU                24             1
+#   SYS_DISABLE_SPMI               25             1
+#   SYS_ENABLE_2ND_EMMC            26             1
+#   SYS_BOOT_PROTECT               27             1
+#   SYS_ENABLE_SPCR                32             1
+#   SYS_DISABLE_PCIE               33             1
+#   SYS_ENABLE_OPTEE               34             1
+#   SYS_DISABLE_TMFF               35             1
+#   SYS_ENABLE_I2C0                36             1
+#   SYS_DISABLE_FORCE_PXE_RETRY    37             1
+#   SYS_ENABLE_BMC_FIELD_MODE      38             1
+#   SYS_DISABLE_HEST               49             1
+#   SYS_L3_CACHE_PART_LEVEL        50             2
+#   SYS_ENABLE_I2C3                52             1
+#   SYS_ENABLE_FORCE_BOOT_RETRY    53             1
+#   SYS_ENABLE_OEM_MFG_CONFIG      54             1
+#   SYS_DISABLE_AUTO_BOOT_REFRESH  66             1
+#   SYS_DISPLAY_BMC_NET_CONFIG     67             1
 #
 sys_cfg()
 {
@@ -699,6 +701,8 @@ sys_cfg()
   sys_cfg_one_byte ${tmp_file} "ENABLE_BMC_FIELD_MODE" 38 "${SYS_ENABLE_BMC_FIELD_MODE}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_HEST" 49 "${SYS_DISABLE_HEST}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_I2C3" 52 "${SYS_ENABLE_I2C3}"
+  sys_cfg_one_byte ${tmp_file} "ENABLE_FORCE_BOOT_RETRY" 53 "${SYS_ENABLE_FORCE_BOOT_RETRY}"
+  sys_cfg_one_byte ${tmp_file} "ENABLE_OEM_MFG_CONFIG" 54 "${SYS_ENABLE_OEM_MFG_CONFIG}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_AUTO_BOOT_REFRESH" 66 "${SYS_DISABLE_AUTO_BOOT_REFRESH}"
   sys_cfg_one_byte ${tmp_file} "DISPLAY_BMC_NET_CONFIG" 67 "${SYS_DISPLAY_BMC_NET_CONFIG}"
 
@@ -1368,7 +1372,7 @@ ARM_CFG_SUBTYPE_BOOT_LEN=640
 ARM_CFG_SUBTYPE_MISC=7
 ARM_CFG_SUBTYPE_MISC_LEN=256
 ARM_CFG_SUBTYPE_UEFI_SB=8
-#ARM_CFG_SUBTYPE_UEFI_SB_LEN=
+ARM_CFG_SUBTYPE_UEFI_SB_LEN=2056
 #
 # Subtype for PCP_TYPE_BMC_CFG
 #
@@ -1450,6 +1454,11 @@ arm_cfg_get_value()
       # FF is an invalid value.
       if [ "$value" -ne 255 ]; then echo "$name=$value" >> ${out_file}; fi
 
+    elif [ "$name" = "CTL_UEFI_SECURE_BOOT_STATE" ]; then
+      value=$(to_integer ${in_file} ${offset} $size)
+      if [ "$value" = "1" ]; then echo "$name=ENABLED" >> ${out_file}; fi
+      if [ "$value" = "2" ]; then echo "$name=DISABLED" >> ${out_file}; fi
+
     elif [[ "$name" == "SYS_"* ]] \
       || [[ "$name" == "CTL_"* ]] \
       || [ "$name" = "FACTORY_DEFAULT_DHCP_BEHAVIOR" ]; then
@@ -1472,6 +1481,27 @@ arm_cfg_get_value()
       if [ $value -eq 1 ]; then echo "$name=UUID" >> ${out_file}; fi
       if [ $value -eq 2 ]; then echo "$name=LLT" >> ${out_file}; fi
 
+    elif [[ "${name}" == "UEFI_SECUREBOOT_KEY"* ]]; then
+      keyfile=
+      value=$(to_integer ${in_file} $(( $offset + 1 )) 1)
+      if [ "$value" = "1" ]; then echo "$name=PK" >> ${out_file}; keyfile=$(echo "$name" | sed 's/UEFI_SECUREBOOT_KEY/pk/'); fi
+      if [ "$value" = "2" ]; then echo "$name=KEK" >> ${out_file}; keyfile=$(echo "$name" | sed 's/UEFI_SECUREBOOT_KEY/kek/'); fi
+      if [ "$value" = "3" ]; then echo "$name=DB" >> ${out_file}; keyfile=$(echo "$name" | sed 's/UEFI_SECUREBOOT_KEY/db/'); fi
+      if [ "$value" = "4" ]; then echo "$name=DBX" >> ${out_file}; keyfile=$(echo "$name" | sed 's/UEFI_SECUREBOOT_KEY/dbx/'); fi
+
+      value=$(to_integer ${in_file} $(( $offset + 2)) 1)
+      if [ "$value" = "1" ]; then echo "${name}_FORM=DER" >> ${out_file}; keyfile="./$keyfile.der"; fi
+      if [ "$value" = "2" ]; then echo "${name}_FORM=HSH" >> ${out_file}; keyfile="./$keyfile.hsh"; fi
+
+      local keyfilesize=$(to_integer ${in_file} $(( $offset + 3 )) 2)
+      if [ -n "$keyfile" ] && [ $keyfilesize -ne 0 ] && [ $keyfilesize -le 2048 ]; then
+        [ -f "$keyfile" ] && rm -f ${keyfile}
+        dd if=${in_file} of=${keyfile} skip=$(( $offset + 5 )) count=${keyfilesize} bs=1 2> /dev/null
+        echo "${name}_FILE=${keyfile}" >> ${out_file}
+      else
+        echo "** invalid UEFI Secure Boot config!"
+        exit 1
+      fi
     fi
   fi
 
@@ -1489,17 +1519,26 @@ arm_sys_cfg_set_value()
   [ ! -f "${out_file}" ] && return
 
   if [ -n "${value}" ]; then
+
     if [ "$name" = "NET_RSHIM_MAC" ]; then
       printf "\\x${NET_RSHIM_MAC//:/\\x}" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+
     elif [ "$name" = "NET_DHCP_IPV6_DUID" ]; then
       if [ "${value^^}" == "UUID" ]; then printf "\x01" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null; fi
       if [ "${value^^}" == "LLT" ]; then printf "\x02" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null; fi
+
     elif [ "$name" = "MFG_PLAT_MODE" ]; then
       if [ "${value^^}" == "DPU" ]; then printf "\x01" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null; fi
       if [ "${value^^}" == "NIC" ]; then printf "\x02" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null; fi
+
+    elif [ "$name" = "CTL_UEFI_SECURE_BOOT_STATE" ]; then
+      if [ "${value^^}" == "ENABLED" ]; then printf "\x01" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null; fi
+      if [ "${value^^}" == "DISABLED" ]; then printf "\x02" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null; fi
+
     elif [ "$name" = "SYS_CE_THRESHOLD" ] \
       || [ "$name" = "SYS_L3_CACHE_PARTITION_LEVEL" ]; then
       to_bytes ${value} ${size} |  dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+
     elif [ "${name}" = "SYS_ENABLE_SPCR" ]; then
       if [ "${value^^}" = "TRUE" ]; then
         if [ -n "${SYS_SPCR_PORT}" ]; then
@@ -1515,13 +1554,47 @@ arm_sys_cfg_set_value()
       elif [ "${value^^}" = "FALSE" ]; then
         printf "\x30" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
       fi
+
+    elif [ "$name" = "UEFI_SECUREBOOT_KEY" ]; then
+      local keyoff=$offset
+
+      local keytype_len=1
+      eval "keytype=\$${name}${value}"
+      keyoff=$(( $keyoff + 1 ))
+      if [ "${keytype^^}" == "PK" ]; then printf "\x01" | dd of="${out_file}" seek="${keyoff}" bs=1 count=${keytype_len} conv=notrunc 2> /dev/null; fi
+      if [ "${keytype^^}" == "KEK" ]; then printf "\x02" | dd of="${out_file}" seek="${keyoff}" bs=1 count=${keytype_len} conv=notrunc 2> /dev/null; fi
+      if [ "${keytype^^}" == "DB" ]; then printf "\x03" | dd of="${out_file}" seek="${keyoff}" bs=1 count=${keytype_len} conv=notrunc 2> /dev/null; fi
+      if [ "${keytype^^}" == "DBX" ]; then printf "\x04" | dd of="${out_file}" seek="${keyoff}" bs=1 count=${keytype_len} conv=notrunc 2> /dev/null; fi
+
+      local keyform_len=1
+      eval "keyform=\$${name}${value}_FORM"
+      keyoff=$(( $keyoff + 1 ))
+      if [ "${keyform^^}" == "DER" ]; then printf "\x01" | dd of="${out_file}" seek="${keyoff}" bs=1 count=${keyform_len} conv=notrunc 2> /dev/null; fi
+      if [ "${keyform^^}" == "HSH" ]; then printf "\x02" | dd of="${out_file}" seek="${keyoff}" bs=1 count=${keyform_len} conv=notrunc 2> /dev/null; fi
+
+      eval "keyfile=\$${name}${value}_FILE"
+      keyoff=$(( $keyoff + 1 ))
+      keyfilesize=$(stat -c%s "$keyfile")
+      if [ $keyfilesize -lt 2048 ]; then
+        # write the size of the file
+        to_bytes ${keyfilesize} 2 |  dd of="${out_file}" seek="$(( $keyoff + 0 ))" bs=1 count=2 conv=notrunc 2> /dev/null
+        # Copy the content of the file
+        dd if="${keyfile}" of="${out_file}" seek="$(( $keyoff + 2 ))" bs=1 count=${keyfilesize} conv=notrunc 2> /dev/null
+      else
+        echo "** key file $keyfile, size $keyfilesize too big!"
+        exit 1
+      fi
+
     elif [ "${value^^}" = "TRUE" ]; then
       printf "\x31" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+
     elif [ "${value^^}" = "FALSE" ]; then
       printf "\x30" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
+
     else
       printf "${value}" | dd of="${out_file}" seek="${offset}" bs=1 count=${size} conv=notrunc 2> /dev/null
     fi
+
   else
     # Write default values.
     if [ "$name" = "SYS_CE_THRESHOLD" ]; then
@@ -1549,10 +1622,14 @@ arm_cfg_to_bin()
   local has_cfg_sys=0
   local has_cfg_boot=0
   local has_cfg_misc=0
+  local has_cfg_uefi_secureboot=0
 
-  if [ -n "${CTL_RESET_ALL_SYS}" ] \
-    || [ -n "${CTL_RESET_ALL_BOOT}" ] \
-    || [ -n "${CTL_RESET_ALL_MISC}" ]; then
+  if [ -n "${CTL_RESET_SYS}" ] \
+    || [ -n "${CTL_DELETE_ALL_BOOT}" ] \
+    || [ -n "${CTL_RESET_MISC}" ] \
+    || [ -n "${CTL_DELETE_ALL_UEFI_SECURE_BOOT_KEYS}" ] \
+    || [ -n "${CTL_UEFI_SECURE_BOOT_STATE}" ] \
+    || [ -n "${CTL_DELETE_UEFI_PASSWORD}" ]; then
     has_cfg_ctl=1
   fi
 
@@ -1573,6 +1650,9 @@ arm_cfg_to_bin()
     || [ -n "${SYS_CE_THRESHOLD}" ] \
     || [ -n "${SYS_DISABLE_HEST}" ] \
     || [ -n "${SYS_L3_CACHE_PARTITION_LEVEL}" ] \
+    || [ -n "${SYS_ENABLE_I2C3}" ] \
+    || [ -n "${SYS_ENABLE_FORCE_BOOT_RETRY}" ] \
+    || [ -n "${SYS_ENABLE_OEM_MFG_CONFIG}" ] \
     || [ -n "${SYS_DISABLE_AUTO_BOOT_REFRESH}" ] \
     || [ -n "${SYS_DISPLAY_BMC_NET_CONFIG}" ] \
     || [ -n "${SYS_ENABLE_REDFISH}" ] \
@@ -1610,9 +1690,27 @@ arm_cfg_to_bin()
 
   [ "$has_cfg_misc" -eq 1 ] && cfg_len=$(( $cfg_len +  $ARM_CFG_SUBTYPE_MISC_LEN ))
 
+  # Check UEFI Secure boot configuration.
+  key_cnt=0
+  for i in {0..32}; do
+    eval "key_type=\$UEFI_SECUREBOOT_KEY${i}"
+    eval "key_form=\$UEFI_SECUREBOOT_KEY${i}_FORM"
+    eval "key_file=\$UEFI_SECUREBOOT_KEY${i}_FILE"
+    if [ -n "$key_type" ] \
+      && [ -n "$key_form" ] \
+      && [ -f "$key_file" ]; then
+      # All fields are mandatory
+      key_cnt=$(( $key_cnt + 1 ))
+      has_cfg_uefi_secureboot=1
+    fi
+  done
+
+  [ "$has_cfg_uefi_secureboot" -eq 1 ] && cfg_len=$(( $cfg_len + $key_cnt * $ARM_CFG_SUBTYPE_UEFI_SB_LEN ))
+
   if [ "$has_cfg_sys" -eq 1 ] \
     || [ "$has_cfg_boot" -eq 1 ] \
-    || [ "$has_cfg_misc" -eq 1 ]; then
+    || [ "$has_cfg_misc" -eq 1 ] \
+    || [ "$has_cfg_uefi_secureboot" -eq 1 ]; then
     cfg_len=$(( $cfg_len + $PCP_TYPE_LEN + $PCP_LENGTH_LEN ))
   else
     echo "no arm config found!"
@@ -1626,11 +1724,14 @@ arm_cfg_to_bin()
 
   local off=$(( $off + $PCP_TYPE_LEN + $PCP_LENGTH_LEN ))
 
-  # Write boot config to blob
+  # Write control config to blob
   if [ "$has_cfg_ctl" -eq 1 ]; then
-    arm_sys_cfg_set_value ${out_file} "CTL_RESET_ALL_SYS" $(( $off + 4 )) 1 "${CTL_RESET_ALL_SYS}"
-    arm_sys_cfg_set_value ${out_file} "CTL_RESET_ALL_BOOT" $(( $off + 5 )) 1 "${CTL_RESET_ALL_BOOT}"
-    arm_sys_cfg_set_value ${out_file} "CTL_RESET_ALL_MISC" $(( $off + 6 )) 1 "${CTL_RESET_ALL_MISC}"
+    arm_sys_cfg_set_value ${out_file} "CTL_RESET_SYS" $(( $off + 4 )) 1 "${CTL_RESET_SYS}"
+    arm_sys_cfg_set_value ${out_file} "CTL_DELETE_ALL_BOOT" $(( $off + 5 )) 1 "${CTL_DELETE_ALL_BOOT}"
+    arm_sys_cfg_set_value ${out_file} "CTL_RESET_MISC" $(( $off + 6 )) 1 "${CTL_RESET_MISC}"
+    arm_sys_cfg_set_value ${out_file} "CTL_DELETE_ALL_UEFI_SECURE_BOOT_KEYS" $(( $off + 7 )) 1 "${CTL_DELETE_ALL_UEFI_SECURE_BOOT_KEYS}"
+    arm_sys_cfg_set_value ${out_file} "CTL_UEFI_SECURE_BOOT_STATE" $(( $off + 8 )) 1 "${CTL_UEFI_SECURE_BOOT_STATE}"
+    arm_sys_cfg_set_value ${out_file} "CTL_DELETE_UEFI_PASSWORD" $(( $off + 9 )) 1 "${CTL_DELETE_UEFI_PASSWORD}"
     # Add length and subtype.
     to_bytes "$(( $ARM_CFG_SUBTYPE_CTL_LEN - 3))" 2 | dd of="${out_file}" seek=$(( $off + 1 )) bs=1 count=2 conv=notrunc 2> /dev/null
     to_bytes "${ARM_CFG_SUBTYPE_CTL}" 1 | dd of="${out_file}" seek=$(( $off + 0 )) bs=1 count=1 conv=notrunc 2> /dev/null
@@ -1653,6 +1754,9 @@ arm_cfg_to_bin()
     arm_sys_cfg_set_value ${out_file} "SYS_CE_THRESHOLD" $(( $off + 45 )) 4 "${SYS_CE_THRESHOLD}"
     arm_sys_cfg_set_value ${out_file} "SYS_DISABLE_HEST" $(( $off + 49 )) 1 "${SYS_DISABLE_HEST}"
     arm_sys_cfg_set_value ${out_file} "SYS_L3_CACHE_PARTITION_LEVEL" $(( $off + 50 )) 1 "${SYS_L3_CACHE_PARTITION_LEVEL}"
+    arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_I2C3" $(( $off + 52 )) 1 "${SYS_ENABLE_I2C3}"
+    arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_FORCE_BOOT_RETRY" $(( $off + 53 )) 1 "${SYS_ENABLE_FORCE_BOOT_RETRY}"
+    arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_OEM_MFG_CONFIG" $(( $off + 54 )) 1 "${SYS_ENABLE_OEM_MFG_CONFIG}"
     arm_sys_cfg_set_value ${out_file} "SYS_DISABLE_AUTO_BOOT_REFRESH" $(( $off + 66 )) 1 "${SYS_DISABLE_AUTO_BOOT_REFRESH}"
     arm_sys_cfg_set_value ${out_file} "SYS_DISPLAY_BMC_NET_CONFIG" $(( $off + 67 )) 1 "${SYS_DISPLAY_BMC_NET_CONFIG}"
     arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_REDFISH" $(( $off + 68 )) 1 "${SYS_ENABLE_REDFISH}"
@@ -1699,6 +1803,23 @@ arm_cfg_to_bin()
     to_bytes "${ARM_CFG_SUBTYPE_MISC}" 1 | dd of="${out_file}" seek=$(( $off + 0 )) bs=1 count=1 conv=notrunc 2> /dev/null
     # Increment offset
     off=$(( $off +  $ARM_CFG_SUBTYPE_MISC_LEN))
+  fi
+
+  # Write UEFI secure boot config to blob
+  if [ "$has_cfg_uefi_secureboot" -eq 1 ]; then
+    for i in {0..32}; do
+        eval "key_entry=\$UEFI_SECUREBOOT_KEY${i}"
+        # All other fields are mandatory, previously checked.
+        # no further checks here.
+        if [ -n "$key_entry" ]; then
+          arm_sys_cfg_set_value ${out_file} "UEFI_SECUREBOOT_KEY" $(( $off + 3 )) $(( $ARM_CFG_SUBTYPE_UEFI_SB_LEN - 3)) $i
+          # Add length and subtype
+          to_bytes "$(( $ARM_CFG_SUBTYPE_UEFI_SB_LEN - 3))" 2 | dd of="${out_file}" seek=$(( $off + 1 )) bs=1 count=2 conv=notrunc 2> /dev/null
+          to_bytes "${ARM_CFG_SUBTYPE_UEFI_SB}" 1 | dd of="${out_file}" seek=$(( $off + 0 )) bs=1 count=1 conv=notrunc 2> /dev/null
+          # Increment offset
+          off=$(( $off +  $ARM_CFG_SUBTYPE_UEFI_SB_LEN))
+        fi
+    done
   fi
 
   # Push PCP Type and PCP Length for Arm config.
@@ -1981,6 +2102,11 @@ cfg2bin()
   local pcp_cfg_bin="$mfg_cfg_bin"
   local cfg_len=0
 
+  if ! command -v xxd > /dev/null; then
+    echo "error: $0 requires the xxd command, please install it first"
+    exit 1
+  fi
+
   # Source the configuration if exists.
   if [ ! -s "${cfg_file}" ]; then
     echo "error: invalid configuration '${cfg_file}'."
@@ -2139,6 +2265,14 @@ pch_to_txt()
     exit 1
   fi
 
+  # Add comment
+  cat <<EOF > ${out_file}
+#
+# This file is auto-generated by '$0 -b' command line.
+#
+
+EOF
+
   local version=$(to_integer ${in_file} $(( $off + 28 )) 4)
   echo "VERSION=$version" >> ${out_file}
   echo "" >> ${out_file}
@@ -2158,6 +2292,7 @@ pcp_cfg_to_txt()
   local length=0
   local subtype=0
   local limit=0
+  local key_idx=0
 
   [ ! -s "${out_file}" ] && rm -f ${out_file}
   [ ! -s "${in_file}" ] && return
@@ -2192,9 +2327,12 @@ pcp_cfg_to_txt()
         subtype=$(to_integer ${in_file} $(( $off + 0 )) 1)
 
         if [ $subtype -eq "$ARM_CFG_SUBTYPE_CTL" ]; then
-          arm_cfg_get_value ${out_file} "CTL_RESET_ALL_SYS" "$(( $off + 4 ))" 1 ${in_file}
-          arm_cfg_get_value ${out_file} "CTL_RESET_ALL_BOOT" "$(( $off + 5 ))" 1 ${in_file}
-          arm_cfg_get_value ${out_file} "CTL_RESET_ALL_MISC" "$(( $off + 6 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "CTL_RESET_SYS" "$(( $off + 4 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "CTL_DELETE_ALL_BOOT" "$(( $off + 5 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "CTL_RESET_MISC" "$(( $off + 6 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "CTL_DELETE_ALL_UEFI_SECURE_BOOT_KEYS" "$(( $off + 7 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "CTL_UEFI_SECURE_BOOT_STATE" "$(( $off + 8 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "CTL_DELETE_UEFI_PASSWORD" "$(( $off + 9 ))" 1 ${in_file}
           off=$(( $off +  $ARM_CFG_SUBTYPE_CTL_LEN))
 
         elif [ $subtype -eq "$ARM_CFG_SUBTYPE_SYS" ]; then
@@ -2212,6 +2350,9 @@ pcp_cfg_to_txt()
           arm_cfg_get_value ${out_file} "SYS_CE_THRESHOLD" "$(( $off + 45 ))" 4 ${in_file}
           arm_cfg_get_value ${out_file} "SYS_DISABLE_HEST" "$(( $off + 49 ))" 1 ${in_file}
           arm_cfg_get_value ${out_file} "SYS_L3_CACHE_PARTITION_LEVEL" "$(( $off + 50 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_ENABLE_I2C3" "$(( $off + 52 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_ENABLE_FORCE_BOOT_RETRY" "$(( $off + 53 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_ENABLE_OEM_MFG_CONFIG" "$(( $off + 54 ))" 1 ${in_file}
           arm_cfg_get_value ${out_file} "SYS_DISABLE_AUTO_BOOT_REFRESH" "$(( $off + 66 ))" 1 ${in_file}
           arm_cfg_get_value ${out_file} "SYS_DISPLAY_BMC_NET_CONFIG" "$(( $off + 67 ))" 1 ${in_file}
           arm_cfg_get_value ${out_file} "SYS_ENABLE_REDFISH" "$(( $off + 68 ))" 1 ${in_file}
@@ -2234,6 +2375,11 @@ pcp_cfg_to_txt()
           arm_cfg_get_value ${out_file} "PXE_DHCP_CLASS_ID" "$(( $off + 17 ))" 63 ${in_file}
           arm_cfg_get_value ${out_file} "BF_BUNDLE_VERSION" "$(( $off + 80 ))" 128 ${in_file}
           off=$(( $off +  $ARM_CFG_SUBTYPE_MISC_LEN))
+
+        elif [ $subtype -eq "$ARM_CFG_SUBTYPE_UEFI_SB" ]; then
+          arm_cfg_get_value ${out_file} "UEFI_SECUREBOOT_KEY${key_idx}" "$(( $off + 3 ))" $(( $ARM_CFG_SUBTYPE_UEFI_SB_LEN - 3 )) ${in_file}
+          off=$(( $off +  $ARM_CFG_SUBTYPE_UEFI_SB_LEN))
+          key_idx=$(( $key_idx + 1 ))
 
         fi
 
@@ -2293,11 +2439,11 @@ pcp_cfg_to_txt()
 #
 # The BFB header magic number "BF^B^S" (0x13026642)
 BFB_MAGIC="42660213"
-# Unsigned capsule header length.
-CAP_HEADER_LEN=168
+# The EFI Capsule GUID
 CAP_GUID="edd5cb6d2de8444cbda17194199ad92a"
+CAP_CERT_CONST="4d535331100000000100000001000000"
 
-# This function doesn't support signed capsule files.
+# This function implements a very baic parsing of the capsule file.
 parse_cap()
 {
   incap=$1
@@ -2311,19 +2457,243 @@ parse_cap()
 
   echo "Parsing EFI Capsule $incap..."
 
-  # Convert capsule length in hex to integer.
-  capfile_len=$(stat -c%s "$incap")
+  local incap_len=$(stat -c%s "$incap")
+  local off=0
+
+  #
+  # This routine assumes the capsule contain a single payload
+  # item. Also the capsule doesn't embed any driver.
+  #
+
+  # The UEFI Capsule header is 8-byte aligned, thus extra padding
+  # bumps up its size to 32 bytes instead of 28 bytes.
+  local uefi_cap_hdr_len=32
+  # typedef struct {
+  #   ///
+  #   /// A GUID that defines the contents of a capsule.
+  #   ///
+  #   EFI_GUID          CapsuleGuid;
+  #   ///
+  #   /// The size of the capsule header. This may be larger than the size of
+  #   /// the EFI_CAPSULE_HEADER since CapsuleGuid may imply
+  #   /// extended header entries
+  #   ///
+  #   UINT32            HeaderSize;
+  #   ///
+  #   /// Bit-mapped list describing the capsule attributes. The Flag values
+  #   /// of 0x0000 - 0xFFFF are defined by CapsuleGuid. Flag values
+  #   /// of 0x10000 - 0xFFFFFFFF are defined by this specification
+  #   ///
+  #   UINT32            Flags;
+  #   ///
+  #   /// Size in bytes of the capsule.
+  #   ///
+  #   UINT32            CapsuleImageSize;
+  # } EFI_CAPSULE_HEADER;
+  local capfile_len=$(to_integer ${incap} $(( $off + 24 )) 4)
   # Quick check on the capsule length.
-  if [ $capfile_len -le $CAP_HEADER_LEN ]; then
-    echo "** error: invalid capsule file length!"
-    return
+  if [ $capfile_len -ne $incap_len ]; then
+    echo "** error: invalid capsule file size"
+    exit 1
   fi
 
-  # Calculate capsule header size. The header is skipped.
-  # @FIXME: Determine header length from capsule.
-  capfile_skip=$CAP_HEADER_LEN
+  off=$(( $off + $uefi_cap_hdr_len ))
+
+  local fmp_cap_hdr_len=16
+  # typedef struct {
+  #   UINT32 Version;
+  #
+  #   ///
+  #   /// The number of drivers included in the capsule and the number of corresponding
+  #   /// offsets stored in ItemOffsetList array.
+  #   ///
+  #   UINT16 EmbeddedDriverCount;
+  #
+  #   ///
+  #   /// The number of payload items included in the capsule and the number of
+  #   /// corresponding offsets stored in the ItemOffsetList array.
+  #   ///
+  #   UINT16 PayloadItemCount;
+  #
+  #   ///
+  #   /// Variable length array of dimension [EmbeddedDriverCount + PayloadItemCount]
+  #   /// containing offsets of each of the drivers and payload items contained within the capsule
+  #   ///
+  #   // UINT64 ItemOffsetList[];
+  # } EFI_FIRMWARE_MANAGEMENT_CAPSULE_HEADER;
+  off=$(( $off + $fmp_cap_hdr_len ))
+
+  local fmp_cap_img_hdr_v2_len=40
+  local fmp_cap_img_hdr_v3_len=48
+  # typedef struct {
+  #   UINT32   Version;
+  #
+  #   ///
+  #   /// Used to identify device firmware targeted by this update. This guid is matched by
+  #   /// system firmware against ImageTypeId field within a EFI_FIRMWARE_IMAGE_DESCRIPTOR
+  #   ///
+  #   EFI_GUID UpdateImageTypeId;
+  #
+  #   ///
+  #   /// Passed as ImageIndex in call to EFI_FIRMWARE_MANAGEMENT_PROTOCOL.SetImage ()
+  #   ///
+  #   UINT8    UpdateImageIndex;
+  #   UINT8    reserved_bytes[3];
+  #
+  #   ///
+  #   /// Size of the binary update image which immediately follows this structure
+  #   ///
+  #   UINT32   UpdateImageSize;
+  #
+  #   ///
+  #   /// Size of the VendorCode bytes which optionally immediately follow binary update image in the capsule
+  #   ///
+  #   UINT32   UpdateVendorCodeSize;
+  #
+  #   ///
+  #   /// The HardwareInstance to target with this update. If value is zero it means match all
+  #   /// HardwareInstances. This field allows update software to target only a single device in
+  #   /// cases where there are more than one device with the same ImageTypeId GUID.
+  #   /// This header is outside the signed data of the Authentication Info structure and
+  #   /// therefore can be modified without changing the Auth data.
+  #   ///
+  #   UINT64   UpdateHardwareInstance;
+  #
+  #   ///
+  #   /// Bits which indicate authentication and depex information for the image that follows this structure.
+  #   /// It is used if EFI_FIRMWARE_MANAGEMENT_CAPSULE_IMAGE_HEADER_INIT_VERSION is 0x00000003.
+  #   ///
+  #   UINT64   ImageCapsuleSupport
+  # } EFI_FIRMWARE_MANAGEMENT_CAPSULE_IMAGE_HEADER;
+  local fmp_ver=$(to_integer ${incap} $(( $off + 0 )) 4)
+  if [ $fmp_ver -lt 3 ]; then
+    off=$(( $off + $fmp_cap_img_hdr_v2_len ))
+  else
+    off=$(( $off + $fmp_cap_img_hdr_v3_len ))
+  fi
+
+  local fmp_auth_hdr_len=32
+  # ///
+  # /// Image Attribute -Authentication Required
+  # ///
+  # typedef struct {
+  #   ///
+  #   /// It is included in the signature of AuthInfo. It is used to ensure freshness/no replay.
+  #   /// It is incremented during each firmware image operation.
+  #   ///
+  #   UINT64                                  MonotonicCount;
+  #   ///
+  #   /// Provides the authorization for the firmware image operations. It is a signature across
+  #   /// the image data and the Monotonic Count value. Caller uses the private key that is
+  #   /// associated with a public key that has been provisioned via the key exchange.
+  #   /// Because this is defined as a signature, WIN_CERTIFICATE_UEFI_GUID.CertType must
+  #   /// be EFI_CERT_TYPE_PKCS7_GUID.
+  #   ///
+  #   WIN_CERTIFICATE_UEFI_GUID               AuthInfo;
+  # } EFI_FIRMWARE_IMAGE_AUTHENTICATION;
+  #
+  # ///
+  # /// Certificate which encapsulates a GUID-specific digital signature
+  # ///
+  # typedef struct {
+  #   ///
+  #   /// This is the standard WIN_CERTIFICATE header, where
+  #   /// wCertificateType is set to WIN_CERT_TYPE_EFI_GUID.
+  #   ///
+  #   WIN_CERTIFICATE   Hdr;
+  #   ///
+  #   /// This is the unique id which determines the
+  #   /// format of the CertData. .
+  #   ///
+  #   EFI_GUID          CertType;
+  #   ///
+  #   /// The following is the certificate data. The format of
+  #   /// the data is determined by the CertType.
+  #   /// If CertType is EFI_CERT_TYPE_RSA2048_SHA256_GUID,
+  #   /// the CertData will be EFI_CERT_BLOCK_RSA_2048_SHA256 structure.
+  #   ///
+  #   UINT8            CertData[1];
+  # } WIN_CERTIFICATE_UEFI_GUID;
+  #
+  # ///
+  # /// The WIN_CERTIFICATE structure is part of the PE/COFF specification.
+  # ///
+  # typedef struct {
+  #   ///
+  #   /// The length of the entire certificate,
+  #   /// including the length of the header, in bytes.
+  #   ///
+  #   UINT32  dwLength;
+  #   ///
+  #   /// The revision level of the WIN_CERTIFICATE
+  #   /// structure. The current revision level is 0x0200.
+  #   ///
+  #   UINT16  wRevision;
+  #   ///
+  #   /// The certificate type. See WIN_CERT_TYPE_xxx for the UEFI
+  #   /// certificate types. The UEFI specification reserves the range of
+  #   /// certificate type values from 0x0EF0 to 0x0EFF.
+  #   ///
+  #   UINT16  wCertificateType;
+  #   ///
+  #   /// The following is the actual certificate. The format of
+  #   /// the certificate depends on wCertificateType.
+  #   ///
+  #   /// UINT8 bCertificate[ANYSIZE_ARRAY];
+  #   ///
+  # } WIN_CERTIFICATE;
+  #
+  # #define WIN_CERT_TYPE_EFI_GUID         0x0EF1
+  #
+  # ///
+  # /// This identifies a signature containing a DER-encoded PKCS #7 version 1.5 [RFC2315]
+  # /// SignedData value.
+  # ///
+  # #define EFI_CERT_TYPE_PKCS7_GUID \
+  #   { \
+  #     0x4aafd29d, 0x68df, 0x49ee, {0x8a, 0xa9, 0x34, 0x7d, 0x37, 0x56, 0x65, 0xa7} \
+  #   }
+  off=$(( $off + $fmp_auth_hdr_len ))
+
+  # Constant data 'MSS1*' is appended to the authentication data.
+  local certdata=$(dd if=${incap} skip=$(( $off + 0 )) count=16 bs=1 2> /dev/null | xxd -p)
+  if [ "$certdata" != "$CAP_CERT_CONST" ]; then
+    # There must be a certificate, thus skip it.
+    # The certificate is expected in DER format.
+    # The certificate size is encoded over two bytes following the sequence
+    # byte (0x30) and the first byte of the DER size (0x82 XX XX).
+    local cert_len=$(dd if=${incap} skip=$(( $off + 2 )) count=2 bs=1 2> /dev/null | xxd -p)
+    cert_len=$(echo $(( 16#$cert_len )))
+    if [ $cert_len -gt $capfile_len ]; then
+      echo "** error: invalid capsule auth data"
+      exit 1
+    fi
+    off=$(( $off + 4 + $cert_len ))
+  fi
+
+  certdata=$(dd if=${incap} skip=$(( $off + 0 )) count=16 bs=1 2> /dev/null | xxd -p)
+  if [ "$certdata" != "$CAP_CERT_CONST" ]; then
+    echo "** error: invalid capsule header"
+    exit 1
+  fi
+
+  # skip certdata
+  off=$(( $off + 16 ))
+
+  local payload_hdr_len=32
+  # ///
+  # /// Payload Header (32 bytes)
+  # ///
+  # typedef struct {
+  #   UINT32   Type;             // Image Type ID
+  #   UINT32   Length;           // Payload Length
+  #   UINT8    PrivateData[24];  // PrivateData
+  # };
+  #
+  off=$(( $off + 32 ))
+
   # Extract capsule payload.
-  dd if=${incap} of=${outbin} bs=1 count=$(( $capfile_len - $CAP_HEADER_LEN )) skip=$capfile_skip 2> /dev/null
+  dd if=${incap} of=${outbin} bs=1 count=$(( $capfile_len - $off )) skip=$off 2> /dev/null
 
   return
 }
@@ -2423,6 +2793,11 @@ bin2cfg()
   local bin_file=$1
   local tmp_cfg_file='/tmp/.bf.cfg.tmp'
   local tmp_bin_file='/tmp/.bf.bin.tmp'
+
+  if ! command -v xxd > /dev/null; then
+    echo "error: $0 requires the xxd command, please install it first"
+    exit 1
+  fi
 
   # Source the configuration if exists.
   if [ ! -s "${bin_file}" ]; then
