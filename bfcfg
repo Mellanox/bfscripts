@@ -2375,10 +2375,10 @@ cfg2bin()
   local out_file=$(basename $1).bin
   local cfg_file=$1
 
-  local mfg_cfg_bin='${TMP_DIR}/.mfg_cfg.cfg'
-  local pch_cfg_bin='${TMP_DIR}/.pch_cfg.bin'
-  local bmc_cfg_bin='${TMP_DIR}/.bmc_cfg.bin'
-  local arm_cfg_bin='${TMP_DIR}/.arm_cfg.bin'
+  local mfg_cfg_bin="${TMP_DIR}/.mfg_cfg.cfg"
+  local pch_cfg_bin="${TMP_DIR}/.pch_cfg.bin"
+  local bmc_cfg_bin="${TMP_DIR}/.bmc_cfg.bin"
+  local arm_cfg_bin="${TMP_DIR}/.arm_cfg.bin"
   local pcp_cfg_bin="$mfg_cfg_bin"
   local cfg_len=0
 
@@ -2983,7 +2983,7 @@ parse_bfb()
 {
   local inbfb=$1
   local outbin=$2
-  local tmp_cap_file='${TMP_DIR}/.bf.cfg.cap.tmp'
+  local tmp_cap_file="${TMP_DIR}/.bf.cfg.cap.tmp"
 
   local bfb_hdr_len=24
   #
@@ -3072,8 +3072,8 @@ bin2cfg()
 {
   local out_file=$(basename $1).cfg
   local bin_file=$1
-  local tmp_cfg_file='${TMP_DIR}/.bf.cfg.tmp'
-  local tmp_bin_file='${TMP_DIR}/.bf.bin.tmp'
+  local tmp_cfg_file="${TMP_DIR}/.bf.cfg.tmp"
+  local tmp_bin_file="${TMP_DIR}/.bf.bin.tmp"
 
   if ! command -v xxd > /dev/null; then
     echo "error: $0 requires the xxd command, please install it first"
