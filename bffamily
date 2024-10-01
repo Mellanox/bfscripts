@@ -77,7 +77,7 @@ elif [ "$bfversion" = $BF3_PLATFORM_ID ]; then
     # map product family names to an appropriate regular expressions
     declare -A PRODUCT_FAMILY_MAP=(
         ["EVB"]="MBF3-(DDR4-EVB|EVB-SKT|EVB)"
-	["Moonraker"]="(900-9D3(B|C)|SN37B36732|SN37B75411|8217991|P66102)"
+	["Moonraker"]="(900-9D3(B|C)|SN37B36732|SN37B75411|8217991|8225672|P66102)"
 	["Goldeneye"]="(900-9D3D|P66584)"
 	["Roy"]="699-21014-0230"
 	["Zhora"]="800-11012-0000-000"
