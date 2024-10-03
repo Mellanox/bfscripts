@@ -36,7 +36,7 @@ TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 trap "rm -rf $TMP_DIR; exit 1" TERM INT
 
-bfcfg_version=4.1
+bfcfg_version=4.2
 bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
@@ -829,7 +829,7 @@ sys_cfg()
   sys_cfg_multi_byte ${tmp_file} "LARGE_ICMC_SIZE" 39 4 "${SYS_LARGE_ICMC_SIZE}"
   sys_cfg_multi_byte ${tmp_file} "CE_THRESHOLD" 45 4 "${SYS_CE_THRESHOLD}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_HEST" 49 "${SYS_DISABLE_HEST}"
-  sys_cfg_multi_byte ${tmp_file} "L3_CACHE_PART_LEVEL" 50 2 "${SYS_L3_CACHE_PART_LEVEL}"
+  sys_cfg_one_byte ${tmp_file} "L3_CACHE_PARTITION_LEVEL" 50 "${SYS_L3_CACHE_PARTITION_LEVEL}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_I2C3" 52 "${SYS_ENABLE_I2C3}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_FORCE_BOOT_RETRY" 53 "${SYS_ENABLE_FORCE_BOOT_RETRY}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_OEM_MFG_CONFIG" 54 "${SYS_ENABLE_OEM_MFG_CONFIG}"
