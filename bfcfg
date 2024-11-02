@@ -36,7 +36,7 @@ TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 trap "rm -rf $TMP_DIR; exit 1" TERM INT
 
-bfcfg_version=4.2
+bfcfg_version=4.3
 bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
@@ -1620,7 +1620,7 @@ PCP_LENGTH_LEN=4
 # the layout this version must be bump-ed up.
 # This verson number must be kept in sync with
 # version defined in UEFI firmware.
-PCP_VERSION=1
+PCP_VERSION=2
 #
 # PCP config type
 #
@@ -1907,7 +1907,9 @@ arm_cfg_to_bin()
     || [ -n "${CTL_RESET_MISC}" ] \
     || [ -n "${CTL_DELETE_ALL_UEFI_SECURE_BOOT_KEYS}" ] \
     || [ -n "${CTL_UEFI_SECURE_BOOT_STATE}" ] \
-    || [ -n "${CTL_DELETE_UEFI_PASSWORD}" ]; then
+    || [ -n "${CTL_DELETE_UEFI_PASSWORD}" ] \
+    || [ -n "${CTL_SAVE_CONFIG_FILE}" ] \
+    || [ -n "${CTL_RESET_LANG}" ]; then
     has_cfg_ctl=1
   fi
 
@@ -2011,6 +2013,8 @@ arm_cfg_to_bin()
     arm_sys_cfg_set_value ${out_file} "CTL_DELETE_ALL_UEFI_SECURE_BOOT_KEYS" $(( $off + 7 )) 1 "${CTL_DELETE_ALL_UEFI_SECURE_BOOT_KEYS}"
     arm_sys_cfg_set_value ${out_file} "CTL_UEFI_SECURE_BOOT_STATE" $(( $off + 8 )) 1 "${CTL_UEFI_SECURE_BOOT_STATE}"
     arm_sys_cfg_set_value ${out_file} "CTL_DELETE_UEFI_PASSWORD" $(( $off + 9 )) 1 "${CTL_DELETE_UEFI_PASSWORD}"
+    arm_sys_cfg_set_value ${out_file} "CTL_SAVE_CONFIG_FILE" $(( $off + 10 )) 1 "${CTL_SAVE_CONFIG_FILE}"
+    arm_sys_cfg_set_value ${out_file} "CTL_RESET_LANG" $(( $off + 11 )) 1 "${CTL_RESET_LANG}"
     # Add length and subtype.
     to_bytes "$(( $ARM_CFG_SUBTYPE_CTL_LEN - 3))" 2 | dd of="${out_file}" seek=$(( $off + 1 )) bs=1 count=2 conv=notrunc 2> /dev/null
     to_bytes "${ARM_CFG_SUBTYPE_CTL}" 1 | dd of="${out_file}" seek=$(( $off + 0 )) bs=1 count=1 conv=notrunc 2> /dev/null
@@ -2129,7 +2133,9 @@ bmc_cfg_get_value()
       echo "$name='$value'" >> ${out_file}
     elif [ "$name" = "BMC_EXPIRE_PASSWORD_ON_FIRST_LOGIN" ] \
       || [ "$name" = "BMC_SOL_ENABLE" ] \
-      || [ "$name" = "BMC_WEBUI_ENABLE" ]; then
+      || [ "$name" = "BMC_WEBUI_ENABLE" ] \
+      || [ "$name" = "BMC_DISABLE_ROOT" ] \
+      || [ "$name" = "BMC_SERIAL_REDIRECT_ENABLE" ]; then
       value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | tr -d '\0')
       if [ "$value" = "1" ]; then echo "$name=yes" >> ${out_file}; fi
       if [ "$value" = "0" ]; then echo "$name=no" >> ${out_file}; fi
@@ -2201,6 +2207,8 @@ bmc_cfg_to_bin()
     || [ -n "${BMC_SOL_ENABLE}" ] \
     || [ -n "${BMC_SOL_CHARACTER_SEND_THRESHOLD}" ] \
     || [ -n "${BMC_SOL_CHARACTER_ACCUMULATE_LEVEL}" ] \
+    || [ -n "${BMC_DISABLE_ROOT}" ] \
+    || [ -n "${BMC_SERIAL_REDIRECT_ENABLE}" ] \
     || [ -n "${BMC_WEBUI_ENABLE}" ] \
     || [ -n "${BMC_SEED}" ] \
     || [ -n "${BMC_IPMI_ACCOUNTS}" ]; then
@@ -2257,6 +2265,8 @@ bmc_cfg_to_bin()
     bmc_cfg_set_value ${out_file} "BMC_SOL_ENABLE" $(( $off + 8 )) 1 "${BMC_SOL_ENABLE}"
     bmc_cfg_set_value ${out_file} "BMC_SOL_CHARACTER_SEND_THRESHOLD" $(( $off + 9 )) 2 "${BMC_SOL_CHARACTER_SEND_THRESHOLD}"
     bmc_cfg_set_value ${out_file} "BMC_SOL_CHARACTER_ACCUMULATE_LEVEL" $(( $off + 11 )) 2 "${BMC_SOL_CHARACTER_ACCUMULATE_LEVEL}"
+    bmc_cfg_set_value ${out_file} "BMC_DISABLE_ROOT" $(( $off + 13 )) 1 "${BMC_DISABLE_ROOT}"
+    bmc_cfg_set_value ${out_file} "BMC_SERIAL_REDIRECT_ENABLE" $(( $off + 14 )) 1 "${BMC_SERIAL_REDIRECT_ENABLE}"
     bmc_cfg_set_value ${out_file} "BMC_WEBUI_ENABLE" $(( $off + 16 )) 1 "${BMC_WEBUI_ENABLE}"
     bmc_cfg_set_value ${out_file} "BMC_SEED" $(( $off + 24 )) 64 "${BMC_SEED}"
     bmc_cfg_set_value ${out_file} "BMC_IPMI_ACCOUNTS" $(( $off + 88 )) 512 "${BMC_IPMI_ACCOUNTS}"
@@ -2613,6 +2623,8 @@ pcp_cfg_to_txt()
           arm_cfg_get_value ${out_file} "CTL_DELETE_ALL_UEFI_SECURE_BOOT_KEYS" "$(( $off + 7 ))" 1 ${in_file}
           arm_cfg_get_value ${out_file} "CTL_UEFI_SECURE_BOOT_STATE" "$(( $off + 8 ))" 1 ${in_file}
           arm_cfg_get_value ${out_file} "CTL_DELETE_UEFI_PASSWORD" "$(( $off + 9 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "CTL_SAVE_CONFIG_FILE" "$(( $off + 10 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "CTL_RESET_LANG" "$(( $off + 11 ))" 1 ${in_file}
           off=$(( $off +  $ARM_CFG_SUBTYPE_CTL_LEN))
 
         elif [ $subtype -eq "$ARM_CFG_SUBTYPE_SYS" ]; then
@@ -2679,6 +2691,8 @@ pcp_cfg_to_txt()
           bmc_cfg_get_value ${out_file} "BMC_SOL_ENABLE" "$(( $off + 8 ))" 1 ${in_file}
           bmc_cfg_get_value ${out_file} "BMC_SOL_CHARACTER_SEND_THRESHOLD" "$(( $off + 9 ))" 2 ${in_file}
           bmc_cfg_get_value ${out_file} "BMC_SOL_CHARACTER_ACCUMULATE_LEVEL" "$(( $off + 11 ))" 2 ${in_file}
+          bmc_cfg_get_value ${out_file} "BMC_DISABLE_ROOT" "$(( $off + 13 ))" 1 ${in_file}
+          bmc_cfg_get_value ${out_file} "BMC_SERIAL_REDIRECT_ENABLE" "$(( $off + 14 ))" 1 ${in_file}
           bmc_cfg_get_value ${out_file} "BMC_WEBUI_ENABLE" "$(( $off + 16 ))" 1 ${in_file}
           bmc_cfg_get_value ${out_file} "BMC_SEED" "$(( $off + 24 ))" 64 ${in_file}
           bmc_cfg_get_value ${out_file} "BMC_IPMI_ACCOUNTS" "$(( $off + 88 ))" 512 ${in_file}
