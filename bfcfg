@@ -1244,7 +1244,7 @@ boot_cfg_dump()
 #
 boot_cfg()
 {
-  local i tmp idx entry ifname proto mac vlan vlan_len disk_entry_idx
+  local i tmp idx entry ifname proto mac upper_mac lower_mac vlan vlan_len disk_entry_idx
   local shell_entry disk_entries boot_order
   local tmp_dir=${TMP_DIR}/.boot_cfg
   local tmp_file=${tmp_dir}/boot
@@ -1364,7 +1364,8 @@ boot_cfg()
           boot_cfg_add_len "${tmp_file}" $((101 + vlan_len + l4proto_len))
         fi
         boot_cfg_add_name "${tmp_file}" "${entry}"
-        oob_mac_addr=$(echo "$mac" | tr -d :)
+        oob_mac_addr=$(echo "${mac}" | tr '[:lower:]' '[:upper:]')
+        oob_mac_addr="${oob_mac_addr//:/}"
         ;;
 
       RSHIM)
@@ -1419,13 +1420,20 @@ boot_cfg()
       boot_cfg_add_eth "${tmp_file}" "${mac}"
 
       # Remove old VLAN configuration
-      mac=$(echo "${mac}" | tr '[:lower:]' '[:upper:]')
-      mac="${mac//:/}"
+      upper_mac=$(echo "${mac}" | tr '[:lower:]' '[:upper:]')
+      upper_mac="${upper_mac//:/}"
+      lower_mac="${mac//:/}"
       eval "tmp=\${${ifname}_VLAN_SET}"
       if [ -z "${tmp}" ]; then
         eval "${ifname}_VLAN_SET=1"
-        chattr -i "${efivars}/${mac}-${efi_vlan_var_guid}" 2>/dev/null
-        rm -f "${efivars}/${mac}-${efi_vlan_var_guid}" 2>/dev/null
+        chattr -i "${efivars}/${upper_mac}-${efi_vlan_var_guid}" 2>/dev/null
+        chattr -i "${efivars}/${lower_mac}-${efi_vlan_var_guid}" 2>/dev/null
+        # Remove efivar with upper case MAC address (valid) and
+        # also the efivar with lower case MAC address. The efivar
+        # with lower case MAC address was created erraneously in previous version
+        # of this script and hence needs rectification.
+        rm -f "${efivars}/${upper_mac}-${efi_vlan_var_guid}" 2>/dev/null
+        rm -f "${efivars}/${lower_mac}-${efi_vlan_var_guid}" 2>/dev/null
       fi
       # Add new VLAN if specified
       if [ -n "${vlan}" ]; then
