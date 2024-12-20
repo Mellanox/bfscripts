@@ -67,6 +67,7 @@ bf_bundle_version_sysfs=${efivars}/BfBundleVer-${efi_bfcfg_var_guid}
 sb_custom_mode_sysfs=${efivars}/BfCfgSbCustomMode-${efi_bfcfg_var_guid}
 pass_settings_sysfs=${efivars}/BfCfgPassSettings-${efi_bfcfg_var_guid}
 bf_modes_sysfs=${efivars}/BfCfgBfModes-${efi_bfcfg_var_guid}
+boot_wdog_sysfs=${efivars}/BfBootWdog-120b4e59-904a-4fe2-9e03-54e9a29ffb22
 
 mfg_sysfs_dir=/sys/bus/platform/devices/MLNXBF04:00/driver
 if [ ! -e $mfg_sysfs_dir/oob_mac ]; then
@@ -797,6 +798,7 @@ sysfs_dump_pass_settings()
 #   SYS_ENABLE_FORCE_BOOT_RETRY    53             1
 #   SYS_ENABLE_OEM_MFG_CONFIG      54             1
 #   SYS_DISABLE_I2C1               55             1
+#   SYS_DISABLE_WDOG_AFTER_BOOT    57             1
 #   SYS_DISABLE_AUTO_BOOT_REFRESH  66             1
 #   SYS_DISPLAY_BMC_NET_CONFIG     67             1
 #
@@ -834,6 +836,7 @@ sys_cfg()
   sys_cfg_one_byte ${tmp_file} "ENABLE_FORCE_BOOT_RETRY" 53 "${SYS_ENABLE_FORCE_BOOT_RETRY}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_OEM_MFG_CONFIG" 54 "${SYS_ENABLE_OEM_MFG_CONFIG}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_I2C1" 55 "${SYS_DISABLE_I2C1}"
+  sys_cfg_one_byte ${tmp_file} "DISABLE_WDOG_AFTER_BOOT" 57 "${SYS_DISABLE_WDOG_AFTER_BOOT}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_AUTO_BOOT_REFRESH" 66 "${SYS_DISABLE_AUTO_BOOT_REFRESH}"
   sys_cfg_one_byte ${tmp_file} "DISPLAY_BMC_NET_CONFIG" 67 "${SYS_DISPLAY_BMC_NET_CONFIG}"
 
@@ -920,15 +923,83 @@ sys_redfish_cfg()
   rm -f ${tmp_file}
 }
 
+#
+# Dump the boot watchdog configuration.
+# Below are the offsets defined in UEFI which is 4(fixed header) plus the offset
+# of the variable within the BfBootWdog struct. These offsets are not supposed to
+# change in order to be backward compatible with previous releases.
+#   VARIABLE(Name)       OFFSET(Byte)  SIZE(Byte)
+#   INTERVAL                  4            2
+#   MODE                      5            1
+#
+sysfs_dump_boot_wdog()
+{
+  local current_mode current_interval current_mode_str
+  local next_mode next_interval next_mode_str
+  local tmp_file=${TMP_DIR}/.bfcfg-bootwdog-data
+
+  if [ ${dump_level} -eq ${DUMP_LEVEL_NONE} ]; then
+    return
+  fi
+
+  if [ ! -e "${boot_wdog_sysfs}" ]; then
+    log_msg "misc: failed to find the ${boot_wdog_sysfs} EFI variable"
+    return
+  fi
+
+  # shellcheck disable=SC2216
+  yes | cp -f ${boot_wdog_sysfs} ${tmp_file}
+  current_interval=$(hexdump -s 4 -n 2 -e '"%d" "\n"' "${tmp_file}")
+  current_mode=$(hexdump -s 5 -n 1 -e '"%d" "\n"' "${tmp_file}")
+
+  if [ "${current_mode}" -eq 0 ]; then
+    current_mode_str="DISABLED"
+  elif [ "${current_mode}" -eq 1 ]; then
+    current_mode_str="STANDARD"
+  elif [ "${current_mode}" -eq 2 ]; then
+    current_mode_str="TIME_LIMIT"
+  else
+    current_mode_str="UNKNOWN"
+  fi
+
+  echo "misc: CURRENT_BOOT_WDOG_MODE=${current_mode_str}"
+  echo "misc: CURRENT_BOOT_WDOG_INTERVAL=${current_interval}"
+
+  # Watchdog settings that will take effect on next boot
+  # can be confirmed with mlxbf-bootctl (may be different than
+  # current boot config)
+  if command -v mlxbf-bootctl 2>&1 > /dev/null; then
+    next_mode=$(mlxbf-bootctl | grep "watchdog mode" | cut -d " " -f 4)
+    next_interval=$(mlxbf-bootctl | grep "watchdog interval" | cut -d " " -f 4)
+  fi
+
+  if [ "${next_mode}" = "disabled" ]; then
+    next_mode_str="DISABLED"
+  elif [ "${next_mode}" = "standard" ]; then
+    next_mode_str="STANDARD"
+  elif [ "${next_mode}" = "time_limit" ]; then
+    next_mode_str="TIME_LIMIT"
+  else
+    next_mode_str="UNKNOWN"
+  fi
+
+  if ! [ "${next_interval}" -eq "${next_interval}" ] 2>/dev/null; then
+    next_interval="UNKNOWN"
+  fi
+
+  echo "misc: NEXT_BOOT_WDOG_MODE=${next_mode_str}"
+  echo "misc: NEXT_BOOT_WDOG_INTERVAL=${next_interval}"
+}
+
 misc_cfg()
 {
   local mac value
   local tmp_file=${TMP_DIR}/.bfcfg-misc-data
 
   if [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ]; then
-    # BF modes & password settings
     sysfs_dump_bf_modes
     sysfs_dump_pass_settings
+    sysfs_dump_boot_wdog
 
     # Rshim MAC address.
     mac=$(hexdump -v -e '/1 "%02x"' ${rshim_efi_mac_sysfs})
