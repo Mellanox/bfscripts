@@ -930,7 +930,7 @@ sys_redfish_cfg()
 # change in order to be backward compatible with previous releases.
 #   VARIABLE(Name)       OFFSET(Byte)  SIZE(Byte)
 #   INTERVAL                  4            2
-#   MODE                      5            1
+#   MODE                      6            1
 #
 sysfs_dump_boot_wdog()
 {
@@ -950,7 +950,7 @@ sysfs_dump_boot_wdog()
   # shellcheck disable=SC2216
   yes | cp -f ${boot_wdog_sysfs} ${tmp_file}
   current_interval=$(hexdump -s 4 -n 2 -e '"%d" "\n"' "${tmp_file}")
-  current_mode=$(hexdump -s 5 -n 1 -e '"%d" "\n"' "${tmp_file}")
+  current_mode=$(hexdump -s 6 -n 1 -e '"%d" "\n"' "${tmp_file}")
 
   if [ "${current_mode}" -eq 0 ]; then
     current_mode_str="DISABLED"
