@@ -96,6 +96,7 @@ image_list = (
     ("uefi-tests", "Specify what UEFI tests to run", 61),
     ("dummy", "Dummy data for padding", 41),
     ("ramdisk", "RAM Disk image", 54),
+    ("info", "BFB versioning information", 50),
     ("image", "Boot image", 62),
     ("initramfs", "In-memory filesystem", 63),
     ("upgrade-image", "Runtime upgrade image", 51),
