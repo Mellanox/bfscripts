@@ -36,7 +36,7 @@ TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 trap "rm -rf $TMP_DIR; exit 1" TERM INT
 
-bfcfg_version=4.3
+bfcfg_version=4.4
 bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
@@ -68,6 +68,11 @@ sb_custom_mode_sysfs=${efivars}/BfCfgSbCustomMode-${efi_bfcfg_var_guid}
 pass_settings_sysfs=${efivars}/BfCfgPassSettings-${efi_bfcfg_var_guid}
 bf_modes_sysfs=${efivars}/BfCfgBfModes-${efi_bfcfg_var_guid}
 boot_wdog_sysfs=${efivars}/BfBootWdog-120b4e59-904a-4fe2-9e03-54e9a29ffb22
+bf_profile_root_key=${efivars}/BfProfileRootKey-f4d4a988-e8c5-11ef-8afc-0242c0a80103
+bf_profile_ca_cert_nvidia=${efivars}/BfProfileCaCertNvidia-f4d4a988-e8c5-11ef-8afc-0242c0a80103
+bf_profile_ca_cert_oem=${efivars}/BfProfileCaCertOem-f4d4a988-e8c5-11ef-8afc-0242c0a80103
+bf_profile_config_sub_ca_cert_nvidia=${efivars}/BfProfileConfigSubCaCertNvidia-f4d4a988-e8c5-11ef-8afc-0242c0a80103
+bf_profile_config_sub_ca_cert_oem=${efivars}/BfProfileConfigSubCaCertOem-f4d4a988-e8c5-11ef-8afc-0242c0a80103
 
 mfg_sysfs_dir=/sys/bus/platform/devices/MLNXBF04:00/driver
 if [ ! -e $mfg_sysfs_dir/oob_mac ]; then
@@ -991,6 +996,97 @@ sysfs_dump_boot_wdog()
   echo "misc: NEXT_BOOT_WDOG_INTERVAL=${next_interval}"
 }
 
+# Display profile root key and CA certificates info
+misc_dump_profile_key_and_certs()
+{
+  local profile_key algo
+  local tmp_file=${TMP_DIR}/.bfcfg-sysfs-data
+
+  if [ ${dump_level} -eq ${DUMP_LEVEL_NONE} ]; then
+    return
+  fi
+
+  if [ -e "${bf_profile_root_key}" ]; then
+    echo "misc: PROFILE_ROOT_KEY_INSTALLED=1"
+    
+    if [ ${dump_level} -ge ${DUMP_LEVEL_EXTRA} ]; then
+      cp -f ${bf_profile_root_key} ${tmp_file}
+      algo=$(hexdump -s 8 -n 1 -e '/1 "%d" "\n"' ${tmp_file})
+      algo=$(( $algo & 0xf ))
+      if [ "$algo" = "0" ]; then
+        profile_key=$(dd if=${bf_profile_root_key} skip=68 count=960 bs=1 2> /dev/null | xxd -p | tr -d '\n')
+        echo "misc: PROFILE_ROOT_KEY_ALGO=RSA"
+        echo "misc:"
+        echo "  Modulus: $profile_key"
+      elif [ "$algo" = "1" ]; then
+        profile_key=$(dd if=${bf_profile_root_key} skip=68 count=960 bs=1 2> /dev/null | xxd -p | tr -d '\n')
+        echo "misc: PROFILE_ROOT_KEY_ALGO=ECC"
+        echo "misc:"
+        echo "  XY: $profile_key"
+      fi
+    fi
+  fi
+
+  if [ -e "${bf_profile_ca_cert_nvidia}" ]; then
+    echo "misc: PROFILE_CA_CERT_NVIDIA_INSTALLED=1"
+    if [ ${dump_level} -ge ${DUMP_LEVEL_EXTRA} ]; then
+      if command -v openssl &> /dev/null; then
+        echo "misc:"
+        echo "  Profile CA (NVIDIA):"
+        dd if=${bf_profile_ca_cert_nvidia} skip=12 count=2040 bs=1 of=${tmp_file} 2> /dev/null
+        openssl x509 -text -inform der -in ${tmp_file}
+      else
+        log_msg "misc: 'openssl' needs to be installed to dump certificates"
+      fi
+    fi
+  fi
+
+  if [ -e "${bf_profile_ca_cert_oem}" ]; then
+    echo "misc: PROFILE_CA_CERT_OEM_INSTALLED=1"
+    if [ ${dump_level} -ge ${DUMP_LEVEL_EXTRA} ]; then
+      if command -v openssl &> /dev/null; then
+        echo "misc:"
+        echo "  Profile CA (OEM):"
+        dd if=${bf_profile_ca_cert_oem} skip=12 count=2040 bs=1 of=${tmp_file} 2> /dev/null
+        openssl x509 -text -inform der -in ${tmp_file}
+      else
+        log_msg "misc: 'openssl' needs to be installed to dump certificates"
+      fi
+    fi
+  fi
+
+  if [ -e "${bf_profile_config_sub_ca_cert_nvidia}" ]; then
+    echo "misc: PROFILE_CONFIG_CA_CERT_NVIDIA_INSTALLED=1"
+    if [ ${dump_level} -ge ${DUMP_LEVEL_EXTRA} ]; then
+      if command -v openssl &> /dev/null; then
+        echo "misc:"
+        echo "  Profile Config CA (NVIDIA):"
+        dd if=${bf_profile_config_sub_ca_cert_nvidia} skip=12 count=2040 bs=1 of=${tmp_file} 2> /dev/null
+        openssl x509 -text -inform der -in ${tmp_file}
+      else
+        log_msg "misc: 'openssl' needs to be installed to dump certificates"
+      fi
+    fi
+  fi
+
+  if [ -e "${bf_profile_config_sub_ca_cert_oem}" ]; then
+    echo "misc: PROFILE_CONFIG_CA_CERT_NVIDIA_INSTALLED=1"
+    if [ ${dump_level} -ge ${DUMP_LEVEL_EXTRA} ]; then
+      if command -v openssl &> /dev/null; then
+        echo "misc:"
+        echo "  Profile Config CA (OEM):"
+        dd if=${bf_profile_config_sub_ca_cert_oem} skip=12 count=2040 bs=1 of=${tmp_file} 2> /dev/null
+        openssl x509 -text -inform der -in ${tmp_file}
+      else
+        log_msg "misc: 'openssl' needs to be installed to dump certificates"
+      fi
+    fi
+  fi
+
+  rm -f ${tmp_file}
+  return
+}
+
 misc_cfg()
 {
   local mac value
@@ -1019,6 +1115,9 @@ misc_cfg()
       value=$(xxd -s 4 -p ${bf_bundle_version_sysfs} 2>/dev/null | xxd -r -p)
     fi
     echo "misc: BF_BUNDLE_VERSION=${value}"
+
+    # Display profile root key and CA certificates info
+    misc_dump_profile_key_and_certs
   else
     # Rshim MAC address.
     if [ -n "${NET_RSHIM_MAC}" ]; then
