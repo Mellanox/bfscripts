@@ -1070,7 +1070,7 @@ misc_dump_profile_key_and_certs()
   fi
 
   if [ -e "${bf_profile_config_sub_ca_cert_oem}" ]; then
-    echo "misc: PROFILE_CONFIG_CA_CERT_NVIDIA_INSTALLED=1"
+    echo "misc: PROFILE_CONFIG_CA_CERT_OEM_INSTALLED=1"
     if [ ${dump_level} -ge ${DUMP_LEVEL_EXTRA} ]; then
       if command -v openssl &> /dev/null; then
         echo "misc:"
