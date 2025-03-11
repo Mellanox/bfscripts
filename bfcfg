@@ -32,6 +32,7 @@ true
 
 ${BFDBG}
 
+# Temporary directory.
 TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 trap "rm -rf $TMP_DIR; exit 1" TERM INT
@@ -53,14 +54,16 @@ mlxmkcap=/lib/firmware/mellanox/boot/capsule/scripts/mlx-mkcap
 
 bfcf_acpi_table=/sys/firmware/acpi/tables/BFCF
 efivars=/sys/firmware/efi/efivars
-sys_cfg_sysfs=${efivars}/BfSysCfg-9c759c02-e5a3-45e4-acfc-c34a500628a6
-redfish_cfg_sysfs=${efivars}/BfRedfish-ce3e5882-6770-4d5e-aa45-90f909da2446
-redfish_state_cfg_sysfs=${efivars}/BfRedfishState-ce3e5882-6770-4d5e-aa45-90f909da2446
-sb_state_sysfs=${efivars}/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c
-sb_setup_mode_sysfs=${efivars}/SetupMode-8be4df61-93ca-11d2-aa0d-00e098032b8c
 efi_global_var_guid=8be4df61-93ca-11d2-aa0d-00e098032b8c
 efi_bfcfg_var_guid=487ff588-fb71-4b19-9100-ebe067aa1af0
 efi_vlan_var_guid=9e23d768-d2f3-4366-9fc3-3a7aba864374
+efi_redfish_var_guid=ce3e5882-6770-4d5e-aa45-90f909da2446
+efi_debug_var_guid=f3ce977e-c17f-493e-a3cd-5731d386e505
+sys_cfg_sysfs=${efivars}/BfSysCfg-9c759c02-e5a3-45e4-acfc-c34a500628a6
+redfish_cfg_sysfs=${efivars}/BfRedfish-${efi_redfish_var_guid}
+redfish_state_cfg_sysfs=${efivars}/BfRedfishState-${efi_redfish_var_guid}
+sb_state_sysfs=${efivars}/SecureBoot-${efi_global_var_guid}
+sb_setup_mode_sysfs=${efivars}/SetupMode-${efi_global_var_guid}
 rshim_efi_mac_sysfs=${efivars}/RshimMacAddr-${efi_global_var_guid}
 pxe_dhcp_class_id_sysfs=${efivars}/DhcpClassId-${efi_global_var_guid}
 bf_bundle_version_sysfs=${efivars}/BfBundleVer-${efi_bfcfg_var_guid}
@@ -68,6 +71,7 @@ sb_custom_mode_sysfs=${efivars}/BfCfgSbCustomMode-${efi_bfcfg_var_guid}
 pass_settings_sysfs=${efivars}/BfCfgPassSettings-${efi_bfcfg_var_guid}
 bf_modes_sysfs=${efivars}/BfCfgBfModes-${efi_bfcfg_var_guid}
 boot_wdog_sysfs=${efivars}/BfBootWdog-120b4e59-904a-4fe2-9e03-54e9a29ffb22
+osinfo_sysfs=${efivars}/BfOsInfo-${efi_debug_var_guid}
 bf_profile_root_key=${efivars}/BfProfileRootKey-f4d4a988-e8c5-11ef-8afc-0242c0a80103
 bf_profile_ca_cert_nvidia=${efivars}/BfProfileCaCertNvidia-f4d4a988-e8c5-11ef-8afc-0242c0a80103
 bf_profile_ca_cert_oem=${efivars}/BfProfileCaCertOem-f4d4a988-e8c5-11ef-8afc-0242c0a80103
@@ -1644,7 +1648,7 @@ boot_cfg()
   done
 
   if [ -n "$oob_mac_addr" ]; then
-    oob_vlan_path=${efivars}/${oob_mac_addr}-9e23d768-d2f3-4366-9fc3-3a7aba864374
+    oob_vlan_path=${efivars}/${oob_mac_addr}-${efi_vlan_var_guid}
     [ -e ${oob_vlan_path} ] && chattr -i ${oob_vlan_path}
     printf "\\x07\\x00\\x00\\x00\\xc8\\x0f" > ${oob_vlan_path}
   fi
@@ -3361,10 +3365,43 @@ print_osarg()
   fi
 }
 
+#
+# Pass some OS info to UEFI variable.
+#
+set_osinfo()
+{
+  local log_buf log_buf_len
+
+  log_buf=0x`cat /proc/kallsyms | grep -w log_buf | awk '{print $1}'`
+  [ "$log_buf" == "0x" ] && return
+  log_buf=$(printf '%016x' "${log_buf}")
+  log_buf_len=0x`cat /proc/kallsyms | grep -w log_buf_len | awk '{print $1}'`
+  [ "$log_buf_len" == "0x" ] && return
+  log_buf_len=$(printf '%016x' "${log_buf_len}")
+
+  printf "\\x06\\x00\\x00\\x00" > ${tmpdir}/os_info
+  printf "\\x${log_buf:14:2}\\x${log_buf:12:2}" >> ${tmpdir}/os_info
+  printf "\\x${log_buf:10:2}\\x${log_buf:8:2}" >> ${tmpdir}/os_info
+  printf "\\x${log_buf:6:2}\\x${log_buf:4:2}" >> ${tmpdir}/os_info
+  printf "\\x${log_buf:2:2}\\x${log_buf:0:2}" >> ${tmpdir}/os_info
+  printf "\\x${log_buf_len:14:2}\\x${log_buf_len:12:2}" >> ${tmpdir}/os_info
+  printf "\\x${log_buf_len:10:2}\\x${log_buf_len:8:2}" >> ${tmpdir}/os_info
+  printf "\\x${log_buf_len:6:2}\\x${log_buf_len:4:2}" >> ${tmpdir}/os_info
+  printf "\\x${log_buf_len:2:2}\\x${log_buf_len:0:2}" >> ${tmpdir}/os_info
+
+  cp ${tmpdir}/os_info "${osinfo_sysfs}" 2>/dev/null
+}
+
 usage()
 {
-  echo "syntax: bfcfg [--help|-h] [--version|-v] [--dump|-d] [--dump-level|-l <${DUMP_LEVEL_NONE}-${DUMP_LEVEL_MAX}>] [--dump-osarg|o]"
-  echo "              [--part-info|-p] [--hscv|-h] [--cfg2bin|-c <cfg_file>] [--bin2cfg|-b <bin_file> [--skip-mfg]]"
+  echo "syntax: bfcfg [--help|-h] [--version|-v]"
+  echo "              [--bin2cfg|-b <bin_file> [--skip-mfg]]"
+  echo "              [--cfg2bin|-c <cfg_file>]"
+  echo "              [--dump|-d] [--dump-level|-l <${DUMP_LEVEL_NONE}-${DUMP_LEVEL_MAX}>]"
+  echo "              [--dump-osarg|-o]"
+  echo "              [--hscv|-s]"
+  echo "              [--osinfo|-i]"
+  echo "              [--part-info|-p]"
 }
 
 dump_mode=0
@@ -3374,14 +3411,15 @@ infile=
 skip_mfg=0
 
 # Parse the arguments.
-options=$(getopt -n bfcfg -o dl:ohvpc:b:s -l dump,dump-level:,dump-osarg,help,part-info,cfg2bin:,bin2cfg:,skip-mfg,version,hscv -- "$@")
+options=$(getopt -n bfcfg -o dil:ohvpc:b:s -l dump,dump-level:,dump-osarg,help,part-info,osinfo,cfg2bin:,bin2cfg:,skip-mfg,version,hscv -- "$@")
 eval set -- "$options"
 while [ "$1" != -- ]; do
   case $1 in
     --dump|-d) dump_mode=1;;
     --dump-level|-l) dump_level=$2 ;;
-    --dump-osarg|o) print_osarg; exit 0;;
+    --dump-osarg|-o) print_osarg; exit 0;;
     --help|-h) usage; exit 0 ;;
+    --osinfo|-i) set_osinfo; exit 0 ;;
     --part-info|-p) part_info; exit 0 ;;
     --skip-mfg) skip_mfg=1 ;;
     --cfg2bin|-c) has_cfg2bin=1; infile=$2 ;;
