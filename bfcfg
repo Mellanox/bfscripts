@@ -804,6 +804,7 @@ sysfs_dump_pass_settings()
 #   SYS_ENABLE_OEM_MFG_CONFIG      54             1
 #   SYS_DISABLE_I2C1               55             1
 #   SYS_DISABLE_WDOG_AFTER_BOOT    57             1
+#   SYS_ENABLE_BMC_WAIT            58             1
 #   SYS_DISABLE_AUTO_BOOT_REFRESH  66             1
 #   SYS_DISPLAY_BMC_NET_CONFIG     67             1
 #
@@ -842,6 +843,7 @@ sys_cfg()
   sys_cfg_one_byte ${tmp_file} "ENABLE_OEM_MFG_CONFIG" 54 "${SYS_ENABLE_OEM_MFG_CONFIG}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_I2C1" 55 "${SYS_DISABLE_I2C1}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_WDOG_AFTER_BOOT" 57 "${SYS_DISABLE_WDOG_AFTER_BOOT}"
+  sys_cfg_one_byte ${tmp_file} "ENABLE_BMC_WAIT" 58 "${SYS_ENABLE_BMC_WAIT}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_AUTO_BOOT_REFRESH" 66 "${SYS_DISABLE_AUTO_BOOT_REFRESH}"
   sys_cfg_one_byte ${tmp_file} "DISPLAY_BMC_NET_CONFIG" 67 "${SYS_DISPLAY_BMC_NET_CONFIG}"
 
@@ -2112,6 +2114,7 @@ arm_cfg_to_bin()
     || [ -n "${SYS_ENABLE_FORCE_BOOT_RETRY}" ] \
     || [ -n "${SYS_ENABLE_OEM_MFG_CONFIG}" ] \
     || [ -n "${SYS_DISABLE_I2C1}" ] \
+    || [ -n "${SYS_ENABLE_BMC_WAIT}" ] \
     || [ -n "${SYS_DISABLE_AUTO_BOOT_REFRESH}" ] \
     || [ -n "${SYS_DISPLAY_BMC_NET_CONFIG}" ] \
     || [ -n "${SYS_ENABLE_REDFISH}" ] \
@@ -2219,6 +2222,7 @@ arm_cfg_to_bin()
     arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_FORCE_BOOT_RETRY" $(( $off + 53 )) 1 "${SYS_ENABLE_FORCE_BOOT_RETRY}"
     arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_OEM_MFG_CONFIG" $(( $off + 54 )) 1 "${SYS_ENABLE_OEM_MFG_CONFIG}"
     arm_sys_cfg_set_value ${out_file} "SYS_DISABLE_I2C1" $(( $off + 55 )) 1 "${SYS_DISABLE_I2C1}"
+    arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_BMC_WAIT" $(( $off + 58 )) 1 "${SYS_ENABLE_BMC_WAIT}"
     arm_sys_cfg_set_value ${out_file} "SYS_DISABLE_AUTO_BOOT_REFRESH" $(( $off + 66 )) 1 "${SYS_DISABLE_AUTO_BOOT_REFRESH}"
     arm_sys_cfg_set_value ${out_file} "SYS_DISPLAY_BMC_NET_CONFIG" $(( $off + 67 )) 1 "${SYS_DISPLAY_BMC_NET_CONFIG}"
     arm_sys_cfg_set_value ${out_file} "SYS_ENABLE_REDFISH" $(( $off + 68 )) 1 "${SYS_ENABLE_REDFISH}"
