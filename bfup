@@ -38,3 +38,5 @@ fi
 [ ! -e "${os_up_path}" ] && exit
 
 echo 1 > "${os_up_path}"
+
+/usr/bin/bfcfg -i 2>/dev/null
