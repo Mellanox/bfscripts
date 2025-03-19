@@ -62,6 +62,7 @@ efi_debug_var_guid=f3ce977e-c17f-493e-a3cd-5731d386e505
 sys_cfg_sysfs=${efivars}/BfSysCfg-9c759c02-e5a3-45e4-acfc-c34a500628a6
 redfish_cfg_sysfs=${efivars}/BfRedfish-${efi_redfish_var_guid}
 redfish_state_cfg_sysfs=${efivars}/BfRedfishState-${efi_redfish_var_guid}
+bmc_upgrade_reset_cfg_sysfs=${efivars}/BmcUpgradeReset-${efi_redfish_var_guid}
 sb_state_sysfs=${efivars}/SecureBoot-${efi_global_var_guid}
 sb_setup_mode_sysfs=${efivars}/SetupMode-${efi_global_var_guid}
 rshim_efi_mac_sysfs=${efivars}/RshimMacAddr-${efi_global_var_guid}
@@ -371,7 +372,7 @@ mfg_cfg_to_bin()
   #   BF Modes      (off:2400, len:   4 bytes)
   #   Reserved      (off:2404, len:1692 bytes)
   #
-  dd if=/dev/zero of=${bin_file} count=16 bs=256
+  dd if=/dev/zero of=${bin_file} count=16 bs=256 >&/dev/null
   has_cfg=0
 
   [ ! -f "${bin_file}" ] && return
@@ -1158,6 +1159,16 @@ misc_cfg()
       cp ${tmp_file} ${bf_bundle_version_sysfs}
       rm -f ${tmp_file}
       log_msg "misc: BF_BUNDLE_VERSION=${BF_BUNDLE_VERSION}"
+    fi
+
+    if [ ."${BMC_UPGRADE_RESET}" == ."1" ]; then
+      printf "\\x07\\x00\\x00\\x00\\x01" > ${tmp_file}
+      if [ -f "${bmc_upgrade_reset_cfg_sysfs}" ]; then
+        chattr -i ${bmc_upgrade_reset_cfg_sysfs}
+      fi
+      cp ${tmp_file} ${bmc_upgrade_reset_cfg_sysfs}
+      rm -f ${tmp_file}
+      log_msg "misc: BMC_UPGRADE_RESET=${BMC_UPGRADE_RESET}"
     fi
   fi
 }
@@ -3404,6 +3415,7 @@ usage()
   echo "              [--cfg2bin|-c <cfg_file>]"
   echo "              [--dump|-d] [--dump-level|-l <${DUMP_LEVEL_NONE}-${DUMP_LEVEL_MAX}>]"
   echo "              [--dump-osarg|-o]"
+  echo "              [--cfg|-f <cfg_file>]"
   echo "              [--hscv|-s]"
   echo "              [--osinfo|-i]"
   echo "              [--part-info|-p]"
@@ -3416,7 +3428,7 @@ infile=
 skip_mfg=0
 
 # Parse the arguments.
-options=$(getopt -n bfcfg -o dil:ohvpc:b:s -l dump,dump-level:,dump-osarg,help,part-info,osinfo,cfg2bin:,bin2cfg:,skip-mfg,version,hscv -- "$@")
+options=$(getopt -n bfcfg -o dil:ohvpc:b:f:s -l dump,dump-level:,dump-osarg,help,part-info,osinfo,cfg2bin:,bin2cfg:cfg:,skip-mfg,version,hscv -- "$@")
 eval set -- "$options"
 while [ "$1" != -- ]; do
   case $1 in
@@ -3429,6 +3441,7 @@ while [ "$1" != -- ]; do
     --skip-mfg) skip_mfg=1 ;;
     --cfg2bin|-c) has_cfg2bin=1; infile=$2 ;;
     --bin2cfg|-b) has_bin2cfg=1; infile=$2 ;;
+    --cfg|-f) cfg_file=$1 ;;
     --version|-v) echo "$0 version '$bfcfg_version'"; exit 0 ;;
     --hscv|-s) echo "$0 highest supported config version: $PCP_VERSION"; exit 0 ;;
   esac
