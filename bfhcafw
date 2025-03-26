@@ -135,6 +135,13 @@ find_fw_with_basename () {
 }
 
 find_fw () {
+    UID=$(id -u)
+
+    if [ "$UID" -ne 0 ]; then
+        err "fatal: must be root to find firmware"
+        exit 1
+    fi
+
     # First search using new filename, with the _fw suffix.
     fw_path="$(find_fw_with_basename ${BASE_FW_NAME}_fw)"
     if [ $? -eq 0 ]; then echo $fw_path; return 0; fi
