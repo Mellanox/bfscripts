@@ -67,7 +67,6 @@ sb_state_sysfs=${efivars}/SecureBoot-${efi_global_var_guid}
 sb_setup_mode_sysfs=${efivars}/SetupMode-${efi_global_var_guid}
 rshim_efi_mac_sysfs=${efivars}/RshimMacAddr-${efi_global_var_guid}
 pxe_dhcp_class_id_sysfs=${efivars}/DhcpClassId-${efi_global_var_guid}
-bf_bundle_version_sysfs=${efivars}/BfBundleVer-${efi_bfcfg_var_guid}
 sb_custom_mode_sysfs=${efivars}/BfCfgSbCustomMode-${efi_bfcfg_var_guid}
 pass_settings_sysfs=${efivars}/BfCfgPassSettings-${efi_bfcfg_var_guid}
 bf_modes_sysfs=${efivars}/BfCfgBfModes-${efi_bfcfg_var_guid}
@@ -1116,13 +1115,6 @@ misc_cfg()
     fi
     echo "misc: PXE_DHCP_CLASS_ID=${value}"
 
-    # BF bundle version.
-    value=""
-    if [ -f "${bf_bundle_version_sysfs}" ]; then
-      value=$(xxd -s 4 -p ${bf_bundle_version_sysfs} 2>/dev/null | xxd -r -p)
-    fi
-    echo "misc: BF_BUNDLE_VERSION=${value}"
-
     # Display profile root key and CA certificates info
     misc_dump_profile_key_and_certs
   else
@@ -1147,18 +1139,6 @@ misc_cfg()
       cp ${tmp_file} ${pxe_dhcp_class_id_sysfs}
       rm -f ${tmp_file}
       log_msg "misc: PXE_DHCP_CLASS_ID=${PXE_DHCP_CLASS_ID}"
-    fi
-
-    # BF bundle version.
-    if [ -n "${BF_BUNDLE_VERSION}" ]; then
-      value="\\x07\\x00\\x00\\x00${BF_BUNDLE_VERSION}"
-      printf "${value}" > ${tmp_file}
-      if [ -f "${bf_bundle_version_sysfs}" ]; then
-        chattr -i ${bf_bundle_version_sysfs}
-      fi
-      cp ${tmp_file} ${bf_bundle_version_sysfs}
-      rm -f ${tmp_file}
-      log_msg "misc: BF_BUNDLE_VERSION=${BF_BUNDLE_VERSION}"
     fi
 
     if [ ."${BMC_UPGRADE_RESET}" == ."1" ]; then
@@ -1893,8 +1873,7 @@ arm_cfg_get_value()
 
   if [ -f "${in_file}" ]; then
     if [[ "$name" == "BOOT"* ]] \
-      || [ "$name" = "PXE_DHCP_CLASS_ID" ] \
-      || [ "$name" = "BF_BUNDLE_VERSION" ]; then
+      || [ "$name" = "PXE_DHCP_CLASS_ID" ]; then
       value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | tr -d '\0')
       if [[ "$name" == "BOOT"*"_DESC" ]] \
       || [[ "$name" == "BOOT"*"_ARGS" ]] \
@@ -2160,7 +2139,6 @@ arm_cfg_to_bin()
   if [ -n "${NET_RSHIM_MAC}" ] \
     || [ -n "${FACTORY_DEFAULT_DHCP_BEHAVIOR}" ] \
     || [ -n "${PXE_DHCP_CLASS_ID}" ] \
-    || [ -n "${BF_BUNDLE_VERSION}" ] \
     || [ -n "${NET_DHCP_IPV6_DUID}" ]; then
     has_cfg_misc=1
   fi
@@ -2278,7 +2256,6 @@ arm_cfg_to_bin()
     arm_sys_cfg_set_value ${out_file} "NET_DHCP_IPV6_DUID" $(( $off + 10 )) 1 "${NET_DHCP_IPV6_DUID}"
     arm_sys_cfg_set_value ${out_file} "FACTORY_DEFAULT_DHCP_BEHAVIOR" $(( $off + 16 )) 1 "${FACTORY_DEFAULT_DHCP_BEHAVIOR}"
     arm_sys_cfg_set_value ${out_file} "PXE_DHCP_CLASS_ID" $(( $off + 17 )) 63 "${PXE_DHCP_CLASS_ID}"
-    arm_sys_cfg_set_value ${out_file} "BF_BUNDLE_VERSION" $(( $off + 80 )) 128 "${BF_BUNDLE_VERSION}"
     # Add length and subtype.
     to_bytes "$(( $ARM_CFG_SUBTYPE_MISC_LEN - 3))" 2 | dd of="${out_file}" seek=$(( $off + 1 )) bs=1 count=2 conv=notrunc 2> /dev/null
     to_bytes "${ARM_CFG_SUBTYPE_MISC}" 1 | dd of="${out_file}" seek=$(( $off + 0 )) bs=1 count=1 conv=notrunc 2> /dev/null
@@ -2864,7 +2841,6 @@ pcp_cfg_to_txt()
           arm_cfg_get_value ${out_file} "NET_DHCP_IPV6_DUID" $(( $off + 10 )) 1 "${in_file}"
           arm_cfg_get_value ${out_file} "FACTORY_DEFAULT_DHCP_BEHAVIOR" "$(( $off + 16 ))" 1 ${in_file}
           arm_cfg_get_value ${out_file} "PXE_DHCP_CLASS_ID" "$(( $off + 17 ))" 63 ${in_file}
-          arm_cfg_get_value ${out_file} "BF_BUNDLE_VERSION" "$(( $off + 80 ))" 128 ${in_file}
           off=$(( $off +  $ARM_CFG_SUBTYPE_MISC_LEN))
 
         elif [ $subtype -eq "$ARM_CFG_SUBTYPE_UEFI_SB" ]; then
