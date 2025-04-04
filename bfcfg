@@ -1121,7 +1121,10 @@ misc_cfg()
     if [ -f "${bf_bundle_version_sysfs}" ]; then
       value=$(xxd -s 4 -p ${bf_bundle_version_sysfs} 2>/dev/null | xxd -r -p)
     fi
-    echo "misc: BF_BUNDLE_VERSION=${value}"
+
+    if [ -n "${value}" ]; then
+      echo "misc: BF_BUNDLE_VERSION=${value}"
+    fi
 
     # Display profile root key and CA certificates info
     misc_dump_profile_key_and_certs
