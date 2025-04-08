@@ -203,9 +203,9 @@ if [ -n "$FILE" ]; then
     exit 0
 fi
 
-UID=$(id -u)
+m_uid=$(id -u)
 
-if [ "$UID" -ne 0 ]; then
+if [ "$m_uid" -ne 0 ]; then
     err "fatal: must be run as root to check currently installed software"
     exit 1
 fi
