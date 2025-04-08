@@ -135,9 +135,9 @@ find_fw_with_basename () {
 }
 
 find_fw () {
-    UID=$(id -u)
+    m_uid=$(id -u)
 
-    if [ "$UID" -ne 0 ]; then
+    if [ "$m_uid" -ne 0 ]; then
         err "fatal: must be root to find firmware"
         exit 1
     fi
