@@ -73,6 +73,8 @@ pass_settings_sysfs=${efivars}/BfCfgPassSettings-${efi_bfcfg_var_guid}
 bf_modes_sysfs=${efivars}/BfCfgBfModes-${efi_bfcfg_var_guid}
 boot_wdog_sysfs=${efivars}/BfBootWdog-120b4e59-904a-4fe2-9e03-54e9a29ffb22
 osinfo_sysfs=${efivars}/BfOsInfo-${efi_debug_var_guid}
+cap_atf_version_sysfs=${efivars}/BfCapAtfVer-${efi_debug_var_guid}
+cap_uefi_version_sysfs=${efivars}/BfCapUefiVer-${efi_debug_var_guid}
 bf_profile_root_key=${efivars}/BfProfileRootKey-f4d4a988-e8c5-11ef-8afc-0242c0a80103
 bf_profile_ca_cert_nvidia=${efivars}/BfProfileCaCertNvidia-f4d4a988-e8c5-11ef-8afc-0242c0a80103
 bf_profile_ca_cert_oem=${efivars}/BfProfileCaCertOem-f4d4a988-e8c5-11ef-8afc-0242c0a80103
@@ -3411,6 +3413,28 @@ set_osinfo()
   cp ${tmpdir}/os_info "${osinfo_sysfs}" 2>/dev/null
 }
 
+#
+# Pass the ATF version from capsule to UEFI variable.
+#
+set_cap_atf_version()
+{
+  printf "\\x06\\x00\\x00\\x00" > ${tmpdir}/cap_atf_version
+  echo "$1" >> ${tmpdir}/cap_atf_version
+
+  cp ${tmpdir}/cap_atf_version "${cap_atf_version_sysfs}" 2>/dev/null
+}
+
+#
+# Pass the UEFI version from capsule to UEFI variable.
+#
+set_cap_uefi_version()
+{
+  printf "\\x06\\x00\\x00\\x00" > ${tmpdir}/cap_uefi_version
+  echo "$1" >> ${tmpdir}/cap_uefi_version
+
+  cp ${tmpdir}/cap_uefi_version "${cap_uefi_version_sysfs}" 2>/dev/null
+}
+
 usage()
 {
   echo "syntax: bfcfg [--help|-h] [--version|-v]"
@@ -3421,6 +3445,8 @@ usage()
   echo "              [--cfg|-f <cfg_file>]"
   echo "              [--hscv|-s]"
   echo "              [--osinfo|-i]"
+  echo "              [--capatfver <pending_version>]"
+  echo "              [--capuefiver <pending_version>]"
   echo "              [--part-info|-p]"
 }
 
@@ -3431,7 +3457,7 @@ infile=
 skip_mfg=0
 
 # Parse the arguments.
-options=$(getopt -n bfcfg -o dil:ohvpc:b:f:s -l dump,dump-level:,dump-osarg,help,part-info,osinfo,cfg2bin:,bin2cfg:cfg:,skip-mfg,version,hscv -- "$@")
+options=$(getopt -n bfcfg -o dil:ohvpc:b:f:s -l dump,dump-level:,dump-osarg,help,part-info,osinfo,cfg2bin:,bin2cfg:cfg:,skip-mfg,version,hscv,capatfver,capuefiver -- "$@")
 eval set -- "$options"
 while [ "$1" != -- ]; do
   case $1 in
@@ -3445,6 +3471,8 @@ while [ "$1" != -- ]; do
     --cfg2bin|-c) has_cfg2bin=1; infile=$2 ;;
     --bin2cfg|-b) has_bin2cfg=1; infile=$2 ;;
     --cfg|-f) cfg_file=$1 ;;
+    --capatfver) set_cap_atf_version $3; exit 0 ;;
+    --capuefiver) set_cap_uefi_version $3; exit 0 ;;
     --version|-v) echo "$0 version '$bfcfg_version'"; exit 0 ;;
     --hscv|-s) echo "$0 highest supported config version: $PCP_VERSION"; exit 0 ;;
   esac
