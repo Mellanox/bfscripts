@@ -92,6 +92,61 @@ print_bfb_installed_vers () {
     print_bfb_file_vers "$CURRENT_BFB" "$DEV_PATH"
 }
 
+print_capsule_file_vers () {
+    # Print versions stored in files.
+    BFB_PATH="$1"
+
+    # UEFI image header
+    pattern="4266021321003005"
+    uefi_image_file="$TMP_DIR/temp_uefi_image.bin"
+
+    atf_version=$(strings "$BFB_PATH" | grep -m 1 "(\(release\|debug\))")
+    if [ -n "$atf_version" ]; then
+        echo BlueField ATF version: "$atf_version"
+    fi
+
+    # Search for the UEFI header pattern
+    xxd -p "$BFB_PATH" | tr -d "\n" | grep -b -o "$pattern" | cut -d: -f1 | while read -r header_offset2; do
+        header_offset=$(($header_offset2/2))
+        image_offset=$((header_offset + 24))
+
+        header_string=$(xxd -p -s $header_offset -l 24 "$BFB_PATH")
+
+        if echo "$header_string" | grep -q "^$pattern"; then
+            # Extract the image length (next 4 bytes after the header)
+            image_len_hex=$(echo "$header_string" | cut -c 17-24)
+            image_len=$(echo "$image_len_hex" | sed 's/\(..\)\(..\)\(..\)\(..\)/\4\3\2\1/')
+            image_len_dec=$(printf "%d" "0x${image_len#0*}")
+
+            # Check the image offset and length against the input file length
+            input_file_length=$(stat -c%s "$BFB_PATH")
+            end_position=$((image_offset + image_len_dec))
+            if [ "$end_position" -gt "$input_file_length" ]; then
+                echo "Error: Image offset + length is greater than input file length"
+                exit 1
+            fi
+
+            # Extract the UEFI image
+            tail -c +$((image_offset + 1)) "$BFB_PATH" | head -c $image_len_dec > "$uefi_image_file"
+
+            # Fetch the version from the UEFI image
+            gzipped=$(file $uefi_image_file | grep gzip)
+            if [ -n "$gzipped" ]; then
+                mv $uefi_image_file $uefi_image_file.gz
+                gunzip $uefi_image_file.gz
+                uefi_version="$(strings -el $uefi_image_file | grep "BlueField" | cut -d':' -f 2)"
+            else
+                echo "Warning: UEFI image not compressed and no version info"
+            fi
+
+            rm $uefi_image_file
+
+            echo BlueField UEFI version: $uefi_version
+            echo
+        fi
+    done
+}
+
 print_bfb_file_vers () {
     # Print versions stored in files.
     BFB_PATH="$1"
@@ -105,6 +160,14 @@ print_bfb_file_vers () {
     fi
 
     echo "--$DISPLAY_NAME"
+
+    # Check for EFI Firmware Management Capsule GUID
+    # EFI_FIRMWARE_MANAGEMENT_CAPSULE_ID_GUID: 6dcbd5ed-e82d-4c44-bda1-7194199ad92a
+    local capguid=$(dd if="${BFB_PATH}" skip=0 count=16 bs=1 2>/dev/null | xxd -p)
+    if [ "$capguid" = "edd5cb6d2de8444cbda17194199ad92a" ]; then
+        print_capsule_file_vers "$DISPLAY_NAME"
+        exit 0
+    fi
 
     # Find and print the ATF version
     echo BlueField ATF version: "$(strings "$BFB_PATH" | grep -m 1 "(\(release\|debug\))")"

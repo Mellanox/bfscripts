@@ -224,6 +224,29 @@ uefi_capsule_update()
         "${efivars}/${os_var}"
     $run sync
 
+    # Use bfver to parse the ATF and UEFI version from the capsule file.
+    BFVER_OUTPUT=$(bfver -f $capsule_file)
+
+    atf_version=""
+    uefi_version=""
+    while IFS= read -r line; do
+        if [[ $line == *"BlueField ATF version:"* ]]; then
+            atf_version=$(echo "$line" | cut -d':' -f3 | xargs)
+        elif [[ $line == *"BlueField UEFI version:"* ]]; then
+            uefi_version=$(echo "$line" | cut -d':' -f2 | xargs)
+        fi
+    done <<< "$BFVER_OUTPUT"
+
+    # Verify that versions were successfully parsed
+    if [ -z "$atf_version" ] || [ -z "$uefi_version" ]; then
+        echo "ERROR: Failed to parse ATF or UEFI version from capsule file" >&2
+        exit 2
+    fi
+
+    # Transfer the ATF and UEFI pending version to UEFI.
+    bfcfg --capatfver $atf_version
+    bfcfg --capuefiver $uefi_version
+
     cat <<EOF
 
     ***********************************************************************
