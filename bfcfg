@@ -1618,7 +1618,7 @@ sb_cfg()
 PCH_FP="B^F^^PCH"
 PCH_HEADER_LEN=128
 PCH_HEADER_TYPE=1
-PCH_HEADER_VERSION=1
+PCH_HEADER_VERSION=2
 #
 # PCP fixed parameters
 #
@@ -2341,20 +2341,22 @@ cfg_push_pch()
   #
   # PCH format (length 128 bytes):
   #
-  # FP          (off:  0, len:  8 bytes)
-  # HdrVersion  (off:  8, len:  4 bytes)
-  # HdrLen      (off: 12, len:  4 bytes)
-  # HdrType	    (off: 16, len:  4 bytes)
-  #	Reserved    (off: 20, len:  4 bytes)
-  #	Length	    (off: 24, len:  4 bytes)
-  #	Version     (off: 28, len:  4 bytes)
-  #	Flags       (off: 32, len:  4 bytes)
-  #	Owner		    (off: 36, len:  1 bytes)
-  #	Reserved    (off: 37, len:  3 bytes)
-  #	UUID/OPN	  (off: 40, len: 32 bytes)
-  #	DataPtr     (off: 72, len:  4 bytes)
-  #	AuthDataPtr (off: 76, len:  4 bytes)
-  #	Reserved    (off: 80, len: 48 bytes)
+  # FP             (off:  0, len:  8 bytes)
+  # HdrVersion     (off:  8, len:  4 bytes)
+  # HdrLen         (off: 12, len:  4 bytes)
+  # HdrType        (off: 16, len:  4 bytes)
+  # Reserved       (off: 20, len:  4 bytes)
+  # Length         (off: 24, len:  4 bytes)
+  # Version        (off: 28, len:  4 bytes)
+  # Flags          (off: 32, len:  4 bytes)
+  # Owner          (off: 36, len:  1 bytes)
+  # Reserved       (off: 37, len:  3 bytes)
+  # UUID/OPN       (off: 40, len: 32 bytes)
+  # DataPtr        (off: 72, len:  4 bytes)
+  # AuthDataPtr    (off: 76, len:  4 bytes)
+  # DataVersion    (off: 80, len:  4 bytes)
+  # DataTimestamp  (off: 84, len:  4 bytes)
+  # Reserved       (off: 88, len: 40 bytes)
   #
 
   local hdr_off=0
@@ -2376,6 +2378,24 @@ cfg_push_pch()
   to_bytes "${version}" 4 | dd of="${out_file}" seek="$(( $hdr_off + 28 ))" bs=1 count=4 conv=notrunc 2> /dev/null
   to_bytes "${payload_data_off}" 4 | dd of="${out_file}" seek="$(( $hdr_off + 72 ))" bs=1 count=4 conv=notrunc 2> /dev/null
   to_bytes "${auth_data_off}" 4 | dd of="${out_file}" seek="$(( $hdr_off + 76 ))" bs=1 count=4 conv=notrunc 2> /dev/null
+
+  # Write configuration data version if specified.
+  if [ -n "${CONFIG_VERSION}" ]; then
+    to_bytes "${CONFIG_VERSION}" 4 | dd of="${out_file}" seek="$(( $hdr_off + 80 ))" bs=1 count=4 conv=notrunc 2> /dev/null
+  fi
+
+  # Write configuration data timestamp if specified.
+  if [ -n "${CONFIG_DATE}" ]; then
+    local timestamp_off=$(( $hdr_off + 84 ))
+    # Parse YYYY.MM.DD format and convert to timestamp
+    local year=$(echo "$CONFIG_DATE" | cut -d'.' -f1)
+    local month=$(echo "$CONFIG_DATE" | cut -d'.' -f2)
+    local day=$(echo "$CONFIG_DATE" | cut -d'.' -f3)
+    # Push date to the header.
+    to_bytes "${year}" 2 | dd of="${out_file}" seek="$(( $timestamp_off + 0 ))" bs=1 count=2 conv=notrunc 2> /dev/null
+    to_bytes "${month}" 1 | dd of="${out_file}" seek="$(( $timestamp_off + 2 ))" bs=1 count=1 conv=notrunc 2> /dev/null
+    to_bytes "${day}" 1 | dd of="${out_file}" seek="$(( $timestamp_off + 3 ))" bs=1 count=1 conv=notrunc 2> /dev/null
+  fi
 
   # Write finger print
   local fp=$(printf ${PCH_FP} | xxd -p | xxd -r -p | sed -e 's/[0-9A-F]\{2\}/&\\x/g' -e 's/\\x$//')
@@ -2577,6 +2597,25 @@ EOF
   local version=$(to_integer ${in_file} $(( $off + 28 )) 4)
   echo "VERSION=$version" >> ${out_file}
   echo "" >> ${out_file}
+
+  # Read configuration data version if present.
+  local data_version=$(to_integer ${in_file} $(( $off + 80 )) 4)
+  if [ "$data_version" != "0" ]; then
+    echo "CONFIG_VERSION=$data_version" >> ${out_file}
+  fi
+  # Read configuration data timestamp if present.
+  local year=$(to_integer ${in_file} $(( $off + 84 + 0)) 2)
+  local month=$(to_integer ${in_file} $(( $off + 84 + 2 )) 1)
+  local day=$(to_integer ${in_file} $(( $off + 84 + 3 )) 1)
+  local data_timestamp="${year}.${month}.${day}"
+  if [ "$year" != "0" ] && [ "$month" != "0" ] && [ "$day" != "0" ]; then
+    echo "CONFIG_DATE=$data_timestamp" >> ${out_file}
+  fi
+
+  if [ "$data_version" != "0" ] || [ "$data_timestamp" != "0" ]; then
+    echo "" >> ${out_file}
+  fi
+
 }
 
 # Receives the platform config binary, parse it and dump it to text.
