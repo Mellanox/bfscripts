@@ -3458,7 +3458,7 @@ set_osinfo()
 set_cap_atf_version()
 {
   printf "\\x06\\x00\\x00\\x00" > ${tmpdir}/cap_atf_version
-  echo "$1" >> ${tmpdir}/cap_atf_version
+  echo -n "$1" >> ${tmpdir}/cap_atf_version
 
   cp ${tmpdir}/cap_atf_version "${cap_atf_version_sysfs}" 2>/dev/null
 }
@@ -3469,7 +3469,7 @@ set_cap_atf_version()
 set_cap_uefi_version()
 {
   printf "\\x06\\x00\\x00\\x00" > ${tmpdir}/cap_uefi_version
-  echo "$1" >> ${tmpdir}/cap_uefi_version
+  echo -n "$1" >> ${tmpdir}/cap_uefi_version
 
   cp ${tmpdir}/cap_uefi_version "${cap_uefi_version_sysfs}" 2>/dev/null
 }
