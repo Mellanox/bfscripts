@@ -36,7 +36,7 @@ TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 trap "rm -rf $TMP_DIR; exit 1" TERM INT
 
-bfcfg_version=4.4
+bfcfg_version=4.4-lts4.9.x-1
 bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
@@ -1636,7 +1636,7 @@ PCP_LENGTH_LEN=4
 # the layout this version must be bump-ed up.
 # This verson number must be kept in sync with
 # version defined in UEFI firmware.
-PCP_VERSION=2
+PCP_VERSION=3
 #
 # PCP config type
 #
