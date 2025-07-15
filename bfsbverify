@@ -540,7 +540,7 @@ verify_cert_sig()
     # Set OpenSSL arguments for signature verification. 
     opensslargs=
     if [ "$alg" = "rsassaPss" ]; then
-        opensslargs="-sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:32 -sigopt rsa_mgf1_md:sha512"
+        opensslargs="-sigopt rsa_padding_mode:pss -sigopt rsa_mgf1_md:sha512"
     fi
 
     # Verify certificate signature.
