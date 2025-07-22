@@ -3439,17 +3439,17 @@ set_osinfo()
   [ "$log_buf_len" == "0x" ] && return
   log_buf_len=$(printf '%016x' "${log_buf_len}")
 
-  printf "\\x06\\x00\\x00\\x00" > ${tmpdir}/os_info
-  printf "\\x${log_buf:14:2}\\x${log_buf:12:2}" >> ${tmpdir}/os_info
-  printf "\\x${log_buf:10:2}\\x${log_buf:8:2}" >> ${tmpdir}/os_info
-  printf "\\x${log_buf:6:2}\\x${log_buf:4:2}" >> ${tmpdir}/os_info
-  printf "\\x${log_buf:2:2}\\x${log_buf:0:2}" >> ${tmpdir}/os_info
-  printf "\\x${log_buf_len:14:2}\\x${log_buf_len:12:2}" >> ${tmpdir}/os_info
-  printf "\\x${log_buf_len:10:2}\\x${log_buf_len:8:2}" >> ${tmpdir}/os_info
-  printf "\\x${log_buf_len:6:2}\\x${log_buf_len:4:2}" >> ${tmpdir}/os_info
-  printf "\\x${log_buf_len:2:2}\\x${log_buf_len:0:2}" >> ${tmpdir}/os_info
+  printf "\\x06\\x00\\x00\\x00" > ${TMP_DIR}/os_info
+  printf "\\x${log_buf:14:2}\\x${log_buf:12:2}" >> ${TMP_DIR}/os_info
+  printf "\\x${log_buf:10:2}\\x${log_buf:8:2}" >> ${TMP_DIR}/os_info
+  printf "\\x${log_buf:6:2}\\x${log_buf:4:2}" >> ${TMP_DIR}/os_info
+  printf "\\x${log_buf:2:2}\\x${log_buf:0:2}" >> ${TMP_DIR}/os_info
+  printf "\\x${log_buf_len:14:2}\\x${log_buf_len:12:2}" >> ${TMP_DIR}/os_info
+  printf "\\x${log_buf_len:10:2}\\x${log_buf_len:8:2}" >> ${TMP_DIR}/os_info
+  printf "\\x${log_buf_len:6:2}\\x${log_buf_len:4:2}" >> ${TMP_DIR}/os_info
+  printf "\\x${log_buf_len:2:2}\\x${log_buf_len:0:2}" >> ${TMP_DIR}/os_info
 
-  cp ${tmpdir}/os_info "${osinfo_sysfs}" 2>/dev/null
+  cp ${TMP_DIR}/os_info "${osinfo_sysfs}" 2>/dev/null
 }
 
 #
@@ -3457,10 +3457,10 @@ set_osinfo()
 #
 set_cap_atf_version()
 {
-  printf "\\x06\\x00\\x00\\x00" > ${tmpdir}/cap_atf_version
-  echo -n "$1" >> ${tmpdir}/cap_atf_version
+  printf "\\x06\\x00\\x00\\x00" > ${TMP_DIR}/cap_atf_version
+  echo -n "$1" >> ${TMP_DIR}/cap_atf_version
 
-  cp ${tmpdir}/cap_atf_version "${cap_atf_version_sysfs}" 2>/dev/null
+  cp ${TMP_DIR}/cap_atf_version "${cap_atf_version_sysfs}" 2>/dev/null
 }
 
 #
@@ -3468,10 +3468,10 @@ set_cap_atf_version()
 #
 set_cap_uefi_version()
 {
-  printf "\\x06\\x00\\x00\\x00" > ${tmpdir}/cap_uefi_version
-  echo -n "$1" >> ${tmpdir}/cap_uefi_version
+  printf "\\x06\\x00\\x00\\x00" > ${TMP_DIR}/cap_uefi_version
+  echo -n "$1" >> ${TMP_DIR}/cap_uefi_version
 
-  cp ${tmpdir}/cap_uefi_version "${cap_uefi_version_sysfs}" 2>/dev/null
+  cp ${TMP_DIR}/cap_uefi_version "${cap_uefi_version_sysfs}" 2>/dev/null
 }
 
 usage()
