@@ -40,3 +40,5 @@ fi
 echo 1 > "${os_up_path}"
 
 /usr/bin/bfcfg -i 2>/dev/null
+# Pass the DOCA version info to UEFI variable.
+/usr/bin/bfcfg --docainfo 2>/dev/null

@@ -73,6 +73,7 @@ pass_settings_sysfs=${efivars}/BfCfgPassSettings-${efi_bfcfg_var_guid}
 bf_modes_sysfs=${efivars}/BfCfgBfModes-${efi_bfcfg_var_guid}
 boot_wdog_sysfs=${efivars}/BfBootWdog-120b4e59-904a-4fe2-9e03-54e9a29ffb22
 osinfo_sysfs=${efivars}/BfOsInfo-${efi_debug_var_guid}
+doca_info_sysfs=${efivars}/BfDocaInfo-${efi_debug_var_guid}
 cap_atf_version_sysfs=${efivars}/BfCapAtfVer-${efi_debug_var_guid}
 cap_uefi_version_sysfs=${efivars}/BfCapUefiVer-${efi_debug_var_guid}
 bf_profile_root_key=${efivars}/BfProfileRootKey-f4d4a988-e8c5-11ef-8afc-0242c0a80103
@@ -3459,6 +3460,34 @@ set_osinfo()
 }
 
 #
+# Pass version info from bf-info command to UEFI variable.
+#
+set_doca_info()
+{
+  local doca_info
+
+  # Check if bf-info command exists
+  if ! command -v bf-info >/dev/null 2>&1; then
+    echo "error: bf-info command not found"
+    exit 1
+  fi
+
+  # Get DOCA version info from bf-info command in JSON format.
+  doca_info=$(bf-info --json 2>/dev/null)
+  if [ -z "${doca_info}" ]; then
+    echo "error: failed to get version info from bf-info command"
+    exit 1
+  fi
+
+  # Create the EFI variable data with header
+  printf "\\x06\\x00\\x00\\x00" > ${TMP_DIR}/doca_info
+  echo -n "${doca_info}" >> ${TMP_DIR}/doca_info
+
+  # Write to EFI variable
+  cp ${TMP_DIR}/doca_info "${doca_info_sysfs}" 2>/dev/null
+}
+
+#
 # Pass the ATF version from capsule to UEFI variable.
 #
 set_cap_atf_version()
@@ -3490,6 +3519,7 @@ usage()
   echo "              [--cfg|-f <cfg_file>]"
   echo "              [--hscv|-s]"
   echo "              [--osinfo|-i]"
+  echo "              [--docainfo]"
   echo "              [--capatfver <pending_version>]"
   echo "              [--capuefiver <pending_version>]"
   echo "              [--part-info|-p]"
@@ -3502,7 +3532,7 @@ infile=
 skip_mfg=0
 
 # Parse the arguments.
-options=$(getopt -n bfcfg -o dil:ohvpc:b:f:s -l dump,dump-level:,dump-osarg,help,part-info,osinfo,cfg2bin:,bin2cfg:cfg:,skip-mfg,version,hscv,capatfver,capuefiver -- "$@")
+options=$(getopt -n bfcfg -o dil:ohvpc:b:f:s -l dump,dump-level:,dump-osarg,help,part-info,osinfo,docainfo,cfg2bin:,bin2cfg:cfg:,skip-mfg,version,hscv,capatfver,capuefiver -- "$@")
 eval set -- "$options"
 while [ "$1" != -- ]; do
   case $1 in
@@ -3511,6 +3541,7 @@ while [ "$1" != -- ]; do
     --dump-osarg|-o) print_osarg; exit 0;;
     --help|-h) usage; exit 0 ;;
     --osinfo|-i) set_osinfo; exit 0 ;;
+    --docainfo) set_doca_info; exit 0 ;;
     --part-info|-p) part_info; exit 0 ;;
     --skip-mfg) skip_mfg=1 ;;
     --cfg2bin|-c) has_cfg2bin=1; infile=$2 ;;
