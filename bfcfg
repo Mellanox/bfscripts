@@ -805,7 +805,8 @@ sysfs_dump_pass_settings()
 #   SYS_DISABLE_FORCE_PXE_RETRY    37             1
 #   SYS_ENABLE_BMC_FIELD_MODE      38             1
 #   SYS_DISABLE_HEST               49             1
-#   SYS_L3_CACHE_PART_LEVEL        50             2
+#   SYS_L3_CACHE_PART_LEVEL        50             1
+#   SYS_LLC_READ_ALLOC             51             1
 #   SYS_ENABLE_I2C3                52             1
 #   SYS_ENABLE_FORCE_BOOT_RETRY    53             1
 #   SYS_ENABLE_OEM_MFG_CONFIG      54             1
@@ -845,6 +846,9 @@ sys_cfg()
   sys_cfg_multi_byte ${tmp_file} "CE_THRESHOLD" 45 4 "${SYS_CE_THRESHOLD}"
   sys_cfg_one_byte ${tmp_file} "DISABLE_HEST" 49 "${SYS_DISABLE_HEST}"
   sys_cfg_one_byte ${tmp_file} "L3_CACHE_PARTITION_LEVEL" 50 "${SYS_L3_CACHE_PARTITION_LEVEL}"
+  if [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ]; then
+    sys_cfg_one_byte ${tmp_file} "LLC_READ_ALLOC" 51 "${SYS_LLC_READ_ALLOC}" # only display the value, not set it
+  fi
   sys_cfg_one_byte ${tmp_file} "ENABLE_I2C3" 52 "${SYS_ENABLE_I2C3}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_FORCE_BOOT_RETRY" 53 "${SYS_ENABLE_FORCE_BOOT_RETRY}"
   sys_cfg_one_byte ${tmp_file} "ENABLE_OEM_MFG_CONFIG" 54 "${SYS_ENABLE_OEM_MFG_CONFIG}"
@@ -1820,7 +1824,7 @@ PCP_LENGTH_LEN=4
 # the layout this version must be bump-ed up.
 # This verson number must be kept in sync with
 # version defined in UEFI firmware.
-PCP_VERSION=3
+PCP_VERSION=4
 #
 # PCP config type
 #
@@ -2130,6 +2134,7 @@ arm_cfg_to_bin()
     || [ -n "${SYS_CE_THRESHOLD}" ] \
     || [ -n "${SYS_DISABLE_HEST}" ] \
     || [ -n "${SYS_L3_CACHE_PARTITION_LEVEL}" ] \
+    || [ -n "${SYS_LLC_READ_ALLOC}" ] \
     || [ -n "${SYS_ENABLE_I2C3}" ] \
     || [ -n "${SYS_ENABLE_FORCE_BOOT_RETRY}" ] \
     || [ -n "${SYS_ENABLE_OEM_MFG_CONFIG}" ] \
@@ -2883,6 +2888,7 @@ pcp_cfg_to_txt()
           arm_cfg_get_value ${out_file} "SYS_CE_THRESHOLD" "$(( $off + 45 ))" 4 ${in_file}
           arm_cfg_get_value ${out_file} "SYS_DISABLE_HEST" "$(( $off + 49 ))" 1 ${in_file}
           arm_cfg_get_value ${out_file} "SYS_L3_CACHE_PARTITION_LEVEL" "$(( $off + 50 ))" 1 ${in_file}
+          arm_cfg_get_value ${out_file} "SYS_LLC_READ_ALLOC" "$(( $off + 51 ))" 1 ${in_file}
           arm_cfg_get_value ${out_file} "SYS_ENABLE_I2C3" "$(( $off + 52 ))" 1 ${in_file}
           arm_cfg_get_value ${out_file} "SYS_ENABLE_FORCE_BOOT_RETRY" "$(( $off + 53 ))" 1 ${in_file}
           arm_cfg_get_value ${out_file} "SYS_ENABLE_OEM_MFG_CONFIG" "$(( $off + 54 ))" 1 ${in_file}
