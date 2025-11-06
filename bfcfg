@@ -401,7 +401,7 @@ mfg_cfg_to_bin()
     mfg_cfg_set_bytes ${bin_file} "MFG_OOB_MAC" 0 8 "\\x${MFG_OOB_MAC//:/\\x}"
     mfg_cfg_set_bytes ${bin_file} "MFG_OPN" 8 24 "${MFG_OPN}"
     mfg_cfg_set_bytes ${bin_file} "MFG_SKU" 32 24 "${MFG_SKU}"
-    mfg_cfg_set_bytes ${bin_file} "MFG_MODL" 56 24 "${MFG_MODL}" 
+    mfg_cfg_set_bytes ${bin_file} "MFG_MODL" 56 24 "${MFG_MODL}"
     mfg_cfg_set_bytes ${bin_file} "MFG_SN" 80 24 "${MFG_SN}"
     mfg_cfg_set_bytes ${bin_file} "MFG_UUID" 104 80 "${MFG_UUID}"
     mfg_cfg_set_bytes ${bin_file} "MFG_REV" 144 8 "${MFG_REV}"
@@ -442,7 +442,7 @@ mfg_cfg_to_bin()
     mfg_cfg_set_bytes ${bin_file} "MFG_SYS_MFR" 256 24 "${MFG_SYS_MFR}"
     mfg_cfg_set_bytes ${bin_file} "MFG_SYS_PDN" 280 24 "${MFG_SYS_PDN}"
     mfg_cfg_set_bytes ${bin_file} "MFG_SYS_VER" 304 512 "${MFG_SYS_VER}"
-    mfg_cfg_set_bytes ${bin_file} "MFG_BSB_MFR" 816 24 "${MFG_BSB_MFR}" 
+    mfg_cfg_set_bytes ${bin_file} "MFG_BSB_MFR" 816 24 "${MFG_BSB_MFR}"
     mfg_cfg_set_bytes ${bin_file} "MFG_BSB_PDN" 840 24 "${MFG_BSB_PDN}"
     mfg_cfg_set_bytes ${bin_file} "MFG_BSB_VER" 864 24 "${MFG_BSB_VER}"
     mfg_cfg_set_bytes ${bin_file} "MFG_BSB_SN" 888 24 "${MFG_BSB_SN}"
@@ -485,37 +485,36 @@ mfg_cfg_bin_to_cap()
     return
   fi
 
+  # Attempt creating the capsule with "mlx-mkcap" if python available
   if command -v python >/dev/null ; then
     ${mlxmkcap} --cfg-data ${bin_file} ${cap_file}
-    if [ $? -eq 0 ]; then
+    if [ $? -eq 0 ] && [ -f "${cap_file}" ]; then
       log_msg "mfg: capsule: file created at ${cap_file}"
-    else
-      log_msg "mfg: capsule: failed to create capsule file"
       return
     fi
+  fi
 
+  # BFB might be missing commands and modules needed to generate
+  # the EFI capsule, thus push the bin file content to the payload
+  # of the pregenerated capsule file.
+  log_msg "mfg: Using template for capsule generation"
+  dummy_cap=/lib/firmware/mellanox/boot/capsule/.efi_bfcfg.cap
+  bin_size=$(stat -c%s ${bin_file})
+  if [ ! -f "${dummy_cap}" ]; then
+    log_msg "mfg: capsule: missing artifacts. Skip capsule generation"
+    return
+  fi
+  cp -f ${dummy_cap} ${cap_file}
+  # Skip the EFI capsule header; the header remains unchanged.
+  # Re-write the payload starting from offset A8 (168).
+  dd if="${bin_file}" of="${cap_file}" seek=168 bs=1 count=${bin_size} conv=notrunc 2> /dev/null
+  if [ $? -eq 0 ]; then
+    log_msg "mfg: capsule: payload updated"
+    log_msg "mfg: capsule: file created at ${cap_file}"
   else
-    # BFB might be missing commands and modules needed to generate
-    # the EFI capsule, thus push the bin file content to the payload
-    # of the pregenerated capsule file.
-    dummy_cap=/lib/firmware/mellanox/boot/capsule/.efi_bfcfg.cap
-    bin_size=$(stat -c%s ${bin_file})
-    if [ ! -f "${dummy_cap}" ]; then
-      log_msg "mfg: capsule: missing artifacts. Skip capsule generation"
-      return
-    fi
-    cp -f ${dummy_cap} ${cap_file}
-    # Skip the EFI capsule header; the header remains unchanged.
-    # Re-write the payload starting from offset A8 (168).
-    dd if="${bin_file}" of="${cap_file}" seek=168 bs=1 count=${bin_size} conv=notrunc 2> /dev/null
-    if [ $? -eq 0 ]; then
-      log_msg "mfg: capsule: payload updated"
-      log_msg "mfg: capsule: file created at ${cap_file}"
-    else
-      log_msg "mfg: capsule: failed to update capsule payload"
-      rm -f ${cap_file}
-      return
-    fi
+    log_msg "mfg: capsule: failed to update capsule payload"
+    rm -f ${cap_file}
+    return
   fi
 }
 
@@ -865,7 +864,7 @@ sys_cfg()
     chattr -i ${sys_cfg_sysfs}
     cp ${tmp_file} ${sys_cfg_sysfs}
     sync
-    has_sys_cfg=1 
+    has_sys_cfg=1
   fi
 
   rm -f ${tmp_file}
@@ -1024,7 +1023,7 @@ misc_dump_profile_key_and_certs()
 
   if [ -e "${bf_profile_root_key}" ]; then
     echo "misc: PROFILE_ROOT_KEY_INSTALLED=1"
-    
+
     if [ ${dump_level} -ge ${DUMP_LEVEL_EXTRA} ]; then
       cp -f ${bf_profile_root_key} ${tmp_file}
       algo=$(hexdump -s 8 -n 1 -e '/1 "%d" "\n"' ${tmp_file})
