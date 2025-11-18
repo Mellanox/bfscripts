@@ -3472,8 +3472,10 @@ set_doca_info()
 
   # Check if bf-info command exists
   if ! command -v bf-info >/dev/null 2>&1; then
-    echo "error: bf-info command not found"
-    exit 1
+    # Since bf-info is part of bf-release package,
+    # it is not critical to fail if the command is not found.
+    echo "warning: bf-info command not found"
+    return
   fi
 
   # Get DOCA version info from bf-info command in JSON format.
