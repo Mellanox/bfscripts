@@ -1427,11 +1427,37 @@ boot_cfg_dump()
   fi
 }
 
+boot_get_oob_mac()
+{
+  local mac ifname msb
+
+  # Get MAC
+  if [ "$bf_chip" = "BlueField-4" ]; then
+    ifname=$(ls -d /sys/class/net/*/device/driver/module/drivers/pci:lan743x | cut -d '/' -f 5)
+    mac=$(ethtool -e ${ifname} | grep 0x0000 | awk 'BEGIN {OFS=":"} {print $3, $4, $5, $6, $7, $8}' 2>/dev/null)
+  else
+    mac=$(cat ${oob_mac_sysfs} 2>/dev/null)
+  fi
+
+  # Check multicast bit
+  if [ ."$mac" = ."00:00:00:00:00:00" ]; then
+    mac=
+  else
+    msb="0x${mac:0:2}"
+    msb=$((msb))
+    if (($msb & 0x1)); then
+      mac=
+    fi
+  fi
+
+  echo $mac
+}
+
 #
 # Boot Entry configuration
 # Each entry BOOT<N> could have the following format:
 #   PXE:
-#     BOOT<N> = NET-<NIC_P0 | NIC_P1 | OOB | RSHIM>[.<vlan-id>]-<IPV4 | IPV6>
+#     BOOT<N> = NET-<NIC_P0 | NIC_P1 | OOB | RSHIM>[.<vlan-id>]-<IPV4 | IPV6>[-HTTP]
 #   UEFI Shell:
 #     BOOT<N> = UEFI_SHELL
 #   DISK: boot entries created during OS installation.
@@ -1551,7 +1577,7 @@ boot_cfg()
 
       case "${ifname}" in
       OOB)
-        mac=$(cat ${oob_mac_sysfs} 2>/dev/null)
+        mac=$(boot_get_oob_mac)
         if [ -z "${mac}" ]; then
           log_msg "boot: failed to get MAC for ${entry}"
           continue
@@ -1567,6 +1593,7 @@ boot_cfg()
         ;;
 
       RSHIM)
+        [ "$bf_chip" = "BlueField-4" ] && continue
         mac=$(hexdump -v -e '/1 " %02x"' ${rshim_efi_mac_sysfs} 2>/dev/null)
         if [ -z "${mac}" ]; then
           log_msg "boot: failed to get MAC for ${entry}"
@@ -3531,84 +3558,178 @@ usage()
   echo "              [--part-info|-p]"
 }
 
-dump_mode=0
-has_cfg2bin=0
-has_bin2cfg=0
-infile=
-skip_mfg=0
+bf_cfg()
+{
+  dump_mode=0
+  has_cfg2bin=0
+  has_bin2cfg=0
+  infile=
+  skip_mfg=0
 
-# Parse the arguments.
-options=$(getopt -n bfcfg -o dil:ohvpc:b:f:s -l dump,dump-level:,dump-osarg,help,part-info,osinfo,docainfo,cfg2bin:,bin2cfg:cfg:,skip-mfg,version,hscv,capatfver,capuefiver -- "$@")
-eval set -- "$options"
-while [ "$1" != -- ]; do
-  case $1 in
-    --dump|-d) dump_mode=1;;
-    --dump-level|-l) dump_level=$2 ;;
-    --dump-osarg|-o) print_osarg; exit 0;;
-    --help|-h) usage; exit 0 ;;
-    --osinfo|-i) set_osinfo; exit 0 ;;
-    --docainfo) set_doca_info; exit 0 ;;
-    --part-info|-p) part_info; exit 0 ;;
-    --skip-mfg) skip_mfg=1 ;;
-    --cfg2bin|-c) has_cfg2bin=1; infile=$2 ;;
-    --bin2cfg|-b) has_bin2cfg=1; infile=$2 ;;
-    --cfg|-f) cfg_file=$1 ;;
-    --capatfver) set_cap_atf_version $3; exit 0 ;;
-    --capuefiver) set_cap_uefi_version $3; exit 0 ;;
-    --version|-v) echo "$0 version '$bfcfg_version'"; exit 0 ;;
-    --hscv|-s) echo "$0 highest supported config version: $PCP_VERSION"; exit 0 ;;
-  esac
+  # Parse the arguments.
+  options=$(getopt -n bfcfg -o dil:ohvpc:b:f:s -l dump,dump-level:,dump-osarg,help,part-info,osinfo,docainfo,cfg2bin:,bin2cfg:cfg:,skip-mfg,version,hscv,capatfver,capuefiver -- "$@")
+  eval set -- "$options"
+  while [ "$1" != -- ]; do
+    case $1 in
+      --dump|-d) dump_mode=1;;
+      --dump-level|-l) dump_level=$2 ;;
+      --dump-osarg|-o) print_osarg; exit 0;;
+      --help|-h) usage; exit 0 ;;
+      --osinfo|-i) set_osinfo; exit 0 ;;
+      --docainfo) set_doca_info; exit 0 ;;
+      --part-info|-p) part_info; exit 0 ;;
+      --skip-mfg) skip_mfg=1 ;;
+      --cfg2bin|-c) has_cfg2bin=1; infile=$2 ;;
+      --bin2cfg|-b) has_bin2cfg=1; infile=$2 ;;
+      --cfg|-f) cfg_file=$1 ;;
+      --capatfver) set_cap_atf_version $3; exit 0 ;;
+      --capuefiver) set_cap_uefi_version $3; exit 0 ;;
+      --version|-v) echo "$0 version '$bfcfg_version'"; exit 0 ;;
+      --hscv|-s) echo "$0 highest supported config version: $PCP_VERSION"; exit 0 ;;
+    esac
+    shift
+  done
   shift
-done
-shift
 
-# Ensure dump_level is set correctly based on input dump_mode and dump_level.
-if [ ${dump_mode} -eq 0 ]; then
-  dump_level=${DUMP_LEVEL_NONE}
-elif [ -z "${dump_level}" ]; then
-  dump_level=${DUMP_LEVEL_DEFAULT}
-elif ! [[ "${dump_level}" =~ ^[${DUMP_LEVEL_NONE}-${DUMP_LEVEL_MAX}]$ ]]; then
-  echo "Invalid dump level." 2>>${log_file}
-  exit 0
-fi
+  # Ensure dump_level is set correctly based on input dump_mode and dump_level.
+  if [ ${dump_mode} -eq 0 ]; then
+    dump_level=${DUMP_LEVEL_NONE}
+  elif [ -z "${dump_level}" ]; then
+    dump_level=${DUMP_LEVEL_DEFAULT}
+  elif ! [[ "${dump_level}" =~ ^[${DUMP_LEVEL_NONE}-${DUMP_LEVEL_MAX}]$ ]]; then
+    echo "Invalid dump level." 2>>${log_file}
+    exit 0
+  fi
 
-if [ "$has_cfg2bin" -eq 1 ]; then
-  cfg2bin $infile
-  exit 0
-elif [ "$has_bin2cfg" -eq 1 ]; then
-  bin2cfg $infile
-  exit 0
-fi
+  if [ "$has_cfg2bin" -eq 1 ]; then
+    cfg2bin $infile
+    exit 0
+  elif [ "$has_bin2cfg" -eq 1 ]; then
+    bin2cfg $infile
+    exit 0
+  fi
 
-# Source the configuration if exists.
-# shellcheck source=/dev/null
-[ -e "${cfg_file}" ] && . ${cfg_file}
+  # Source the configuration if exists.
+  # shellcheck source=/dev/null
+  [ -e "${cfg_file}" ] && . ${cfg_file}
 
-# Start a new log file.
-start_log_file
+  # Start a new log file.
+  start_log_file
 
-# Mount the efi variables.
-test "$(ls -A ${efivars})" || mount -t efivarfs none ${efivars}
+  # Mount the efi variables.
+  test "$(ls -A ${efivars})" || mount -t efivarfs none ${efivars}
 
-icm_cfg
-if [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ]; then
-  # Backward compatibility; dump mfg_cfg prior
-  # to sys_cfg and sys_redfish_cfg
-  mfg_cfg
-  sys_cfg
-  sys_redfish_cfg
+  icm_cfg
+  if [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ]; then
+    # Backward compatibility; dump mfg_cfg prior
+    # to sys_cfg and sys_redfish_cfg
+    mfg_cfg
+    sys_cfg
+    sys_redfish_cfg
+  else
+    # It is important to run this configuration
+    # in this specific order, because sys_cfg data
+    # and sys_redfish_cfg data might be appended
+    # to the capsule file created to program mfg_cfg
+    sys_cfg
+    sys_redfish_cfg
+    mfg_cfg
+  fi
+  misc_cfg
+  boot_cfg
+  sb_cfg
+}
+
+bf4_usage()
+{
+  if [ "$bf_chip" = "BlueField-4" ]; then
+    echo "syntax: bfcfg [--help|-h] [--version|-v]"
+    echo "              [--dump|-d] [--dump-level|-l <${DUMP_LEVEL_NONE}-${DUMP_LEVEL_MAX}>]"
+  fi
+}
+
+bf4_mfg_sysfs_cfg()
+{
+  local ifname mac signature
+
+  ifname=$(ls -d /sys/class/net/*/device/driver/module/drivers/pci:lan743x | cut -d '/' -f 5)
+  if [ -z "${ifname}" ]; then
+    log_msg "mfg: oob interface not found"
+    return
+  fi
+
+  if [ ${dump_level} -gt ${DUMP_LEVEL_NONE} ]; then
+    # Check valid signature 'aa'.
+    mac=$(ethtool -e ${ifname} | grep 0x0000 | awk '{print $2 ":" $3 ":" $4 ":" $5 ":" $6 ":" $7 ":" $8}')
+    if [ ."${mac:0:2}" = ."aa" ]; then
+      mac="${mac:3}"
+    else
+      mac=""
+    fi
+    echo "MFG_OOB_MAC=${mac}"
+    return
+  fi
+
+  [ -z "${MFG_OOB_MAC}" ] && return
+
+  # Clear the valid signature is zero mac is specified.
+  if [ "${MFG_OOB_MAC}" = "00:00:00:00:00:00" ]; then
+    signature="ff"
+    MFG_OOB_MAC="ff:ff:ff:ff:ff:ff"
+  else
+    signature="aa"
+  fi
+
+  IFS=":" read -r -a BYTES <<< "${MFG_OOB_MAC}"
+  printf "\x${signature}\x${BYTES[0]}\x${BYTES[1]}\x${BYTES[2]}\x${BYTES[3]}\x${BYTES[4]}\x${BYTES[5]}" > ${TMP_DIR}/oobmac
+  ethtool -E ${ifname} magic 0x74A5 offset 0 length 7 < ${TMP_DIR}/oobmac
+}
+
+#
+# Only support mfg_sysfs_cfg() for now.
+#
+bf4_cfg()
+{
+  dump_mode=0
+
+  # Parse the arguments.
+  options=$(getopt -n bfcfgl: -o dhvl -l dump,dump-level:,help,version -- "$@")
+  eval set -- "$options"
+  while [ "$1" != -- ]; do
+    case $1 in
+      --dump|-d) dump_mode=1;;
+      --dump-level|-l) dump_level=$2 ;;
+      --help|-h) bf4_usage; exit 0 ;;
+      --version|-v) echo "$0 version '$bfcfg_version'"; exit 0 ;;
+    esac
+    shift
+  done
+  shift
+
+  # Ensure dump_level is set correctly based on input dump_mode and dump_level.
+  if [ ${dump_mode} -eq 0 ]; then
+    dump_level=${DUMP_LEVEL_NONE}
+  elif [ -z "${dump_level}" ]; then
+    dump_level=${DUMP_LEVEL_DEFAULT}
+  elif ! [[ "${dump_level}" =~ ^[${DUMP_LEVEL_NONE}-${DUMP_LEVEL_MAX}]$ ]]; then
+    echo "Invalid dump level." 2>>${log_file}
+    exit 0
+  fi
+
+  # Source the configuration if exists.
+  # shellcheck source=/dev/null
+  [ -e "${cfg_file}" ] && . ${cfg_file}
+
+  bf4_mfg_sysfs_cfg
+}
+
+bf_chip=$(bffamily --chip)
+
+if [ "$bf_chip" = "BlueField-4" ]; then
+  bf4_cfg $*
 else
-  # It is important to run this configuration
-  # in this specific order, because sys_cfg data
-  # and sys_redfish_cfg data might be appended
-  # to the capsule file created to program mfg_cfg
-  sys_cfg
-  sys_redfish_cfg
-  mfg_cfg
+  bf_cfg $*
 fi
-misc_cfg
-boot_cfg
-sb_cfg
-sync
 
+sync
 exit $bfcfg_rc
