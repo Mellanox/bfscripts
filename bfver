@@ -100,7 +100,7 @@ print_capsule_file_vers () {
     pattern="4266021321003005"
     uefi_image_file="$TMP_DIR/temp_uefi_image.bin"
 
-    atf_version=$(strings "$BFB_PATH" | grep -m 1 "(\(release\|debug\))")
+    atf_version=$(strings "$BFB_PATH" | grep -m 1 "(\(release\|debug\))" | cut -d':' -f2)
     if [ -n "$atf_version" ]; then
         echo BlueField ATF version: "$atf_version"
     fi
@@ -170,7 +170,7 @@ print_bfb_file_vers () {
     fi
 
     # Find and print the ATF version
-    echo BlueField ATF version: "$(strings "$BFB_PATH" | grep -m 1 "(\(release\|debug\))")"
+    echo BlueField ATF version: "$(strings "$BFB_PATH" | grep -m 1 "(\(release\|debug\))" | cut -d':' -f2)"
 
     # Keep UEFI version and use it to determine BSP version as well
     UEFI_VER="$(strings -el "$BFB_PATH" | grep "BlueField" | cut -d':' -f 2)"
