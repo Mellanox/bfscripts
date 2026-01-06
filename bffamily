@@ -29,13 +29,46 @@
 
 # Arrays are bash specific so this script requires bash.
 
+bffamily_version=1.0
 BF1_PLATFORM_ID=0x00000211
 BF2_PLATFORM_ID=0x00000214
 BF3_PLATFORM_ID=0x0000021c
 
-bfversion=$(bfhcafw mcra 0xf0014.0:16)
+usage()
+{
+  echo "syntax: bffamily [--help|-h] [--chip] [--version|-v]"
+}
 
-if [ "$bfversion" = $BF1_PLATFORM_ID ]; then
+show_chip()
+{
+  if grep -q TH500 /sys/firmware/acpi/tables/DSDT 2>/dev/null; then
+    echo "BlueField-4"
+  elif grep -q "MLNXBF33" /sys/firmware/acpi/tables/SSDT* 2>/dev/null; then
+    echo "BlueField-3"
+  elif grep -q "MLNXBF22" /sys/firmware/acpi/tables/SSDT* 2>/dev/null; then
+    echo "BlueField-2"
+  elif grep -q "MLNXBF02" /sys/firmware/acpi/tables/SSDT* 2>/dev/null; then
+    echo "BlueField-1"
+  else
+    echo "Unknown"
+  fi
+}
+
+options=$(getopt -n bffamily -o chv -l chip,help,version -- "$@")
+eval set -- "$options"
+while [ "$1" != -- ]; do
+  case $1 in
+    --help|-h) usage; exit 0;;
+    --chip|-c) show_chip; exit 0;;
+    --version|-v) echo "$0 version '$bffamily_version'"; exit 0 ;;
+  esac
+  shift
+done
+shift
+
+bfversion=$(bfhcafw mcra 0xf0014.0:16 2>/dev/null)
+
+if [[ "$bfversion" = "$BF1_PLATFORM_ID" ]]; then
     # map product family names to an appropriate regular expressions
     declare -A PRODUCT_FAMILY_MAP=(
         ["Bluewhale"]="MBE(11|12)0(0|1)[A-F]-(BC|BN)[0-9]"
@@ -50,8 +83,7 @@ if [ "$bfversion" = $BF1_PLATFORM_ID ]; then
     )
     PART_NUMBER=$(lspci -s "$(bfhcafw bus)" -vv | grep PN)
 
-elif [ "$bfversion" = $BF2_PLATFORM_ID ]; then
-
+elif [[ "$bfversion" = "$BF2_PLATFORM_ID" ]]; then
     # map product family names to an appropriate regular expressions
     declare -A PRODUCT_FAMILY_MAP=(
         ["EVB"]="MBF2-EVB"
@@ -72,7 +104,7 @@ elif [ "$bfversion" = $BF2_PLATFORM_ID ]; then
     )
     PART_NUMBER=$(bfhcafw flint q full | grep "Part Number:" | cut -f 2 -d ":" | xargs)
 
-elif [ "$bfversion" = $BF3_PLATFORM_ID ]; then
+elif [[ "$bfversion" = "$BF3_PLATFORM_ID" ]]; then
 
     # map product family names to an appropriate regular expressions
     declare -A PRODUCT_FAMILY_MAP=(
