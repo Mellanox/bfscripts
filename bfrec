@@ -29,6 +29,13 @@
 
 set -e
 
+bf_chip=$(bffamily --chip)
+
+if [ "$bf_chip" = "BlueField-4" ]; then
+    echo "bfrec is NOT supported for BlueField-4" >&2
+    exit 1
+fi
+
 # To debug set run=echo
 run=
 
@@ -415,7 +422,7 @@ has_debug_bfb()
 
     authcert_cn="Trusted Debug BF Root Authorization Certificate"
     # Add dummy 'tr' command, because 'grep' might fail and cause the script
-    # to exit as '-e' is set. 
+    # to exit as '-e' is set.
     authcert="$(strings "$in_file" | grep -m 1 "$authcert_cn" | tr -d ' ')"
     if [ -z "$authcert" ]; then
         return 0
