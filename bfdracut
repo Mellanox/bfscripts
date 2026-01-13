@@ -27,6 +27,13 @@
 # of the authors and should not be interpreted as representing official policies,
 # either expressed or implied, of the FreeBSD Project.
 
+bf_chip=$(bffamily --chip)
+
+if [ "$bf_chip" = "BlueField-4" ]; then
+    echo "${0##*/} is NOT supported for BlueField-4" >&2
+    exit 1
+fi
+
 set -e
 
 #
