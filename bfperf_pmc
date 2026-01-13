@@ -33,6 +33,10 @@ from collections import defaultdict
 import os
 
 import argparse
+import sys
+import subprocess
+from pathlib import Path
+
 
 sys_fs_prefix = '/to/be/initialized/'
 sys_fs_parent_folder = '/sys/class/hwmon'
@@ -154,6 +158,14 @@ def pmc_perf_ctrs_collect(set_perf_core, _module2intEvents_ids_dict, _module2ran
 
 def main():
     global sys_fs_prefix
+
+    bf_chip = subprocess.check_output(["bffamily", "--chip"], text=True).strip()
+
+    script_name = Path(sys.argv[0]).name
+
+    if bf_chip == "BlueField-4":
+        print(f"{script_name} is NOT supported for BlueField-4", file=sys.stderr)
+        return 1
 
     parser = argparse.ArgumentParser(#prog = 'PROG',
                                      description="sysfs access to performance counters in BF3",
