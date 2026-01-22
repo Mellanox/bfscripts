@@ -61,10 +61,10 @@ create_net() {
         ifnet=$(echo $bfnet | cut -d: -f3)
     fi
     if [ -n "$bfmac" ]; then
-        realbfmac=$(echo $bfmac | cut -d: -f1 | tr '-' ':')
+        realbfmac=$(echo $bfmac | cut -b1-17 | tr '-' ':')
         ifname=$(grep $realbfmac /sys/class/net/*/address | awk -F\/ {'print $5'})
-        ifaddr=$(echo $bfmac | cut -d: -f2)
-        ifnet=$(echo $bfmac | cut -d: -f3)
+        ifaddr=$(echo $bfmac | awk -F: '{print $(NF-1) }')
+        ifnet=$(echo $bfmac |  awk -F: '{print $(NF) }')
     fi
     # vlan check
     if echo "$ifname" | grep -q -E ".+\..+" >/dev/null; then
