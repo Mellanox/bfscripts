@@ -4,24 +4,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
 
-chip=$(bffamily --chip 2>/dev/null)
-if [ $? -ne 0 ] || [ -z "$chip" ]; then
-  echo "Error: Unable to determine BlueField chip family" >&2
-  exit 1
-fi
-
-case "$chip" in
-  BlueField-3|BlueField-4)
-    echo "No live frequency reporting is supported at this time" >&2
-    echo "core freq = -1 MHz"
-    exit 0
-    ;;
-  Unknown)
-    echo "Error: Unknown BlueField chip family" >&2
-    exit 1
-    ;;
-esac
-
 if [ ! -r /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_cur_freq ]; then
   # Cannot access cpufreq driver on BF-1 and BF-2. Use SMBios table instead.
   msg=$(dmidecode -s processor-frequency)    # showing "XXX MHz"
