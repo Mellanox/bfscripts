@@ -36,7 +36,7 @@ TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 trap "rm -rf $TMP_DIR; exit 1" TERM INT
 
-bfcfg_version=4.4-lts4.9.x-1
+bfcfg_version=4.4-lts4.9.x-2
 bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
@@ -390,7 +390,7 @@ mfg_cfg_to_bin()
     mfg_cfg_set_bytes ${bin_file} "MFG_OOB_MAC" 0 8 "\\x${MFG_OOB_MAC//:/\\x}"
     mfg_cfg_set_bytes ${bin_file} "MFG_OPN" 8 24 "${MFG_OPN}"
     mfg_cfg_set_bytes ${bin_file} "MFG_SKU" 32 24 "${MFG_SKU}"
-    mfg_cfg_set_bytes ${bin_file} "MFG_MODL" 56 24 "${MFG_MODL}" 
+    mfg_cfg_set_bytes ${bin_file} "MFG_MODL" 56 24 "${MFG_MODL}"
     mfg_cfg_set_bytes ${bin_file} "MFG_SN" 80 24 "${MFG_SN}"
     mfg_cfg_set_bytes ${bin_file} "MFG_UUID" 104 80 "${MFG_UUID}"
     mfg_cfg_set_bytes ${bin_file} "MFG_REV" 144 8 "${MFG_REV}"
@@ -431,7 +431,7 @@ mfg_cfg_to_bin()
     mfg_cfg_set_bytes ${bin_file} "MFG_SYS_MFR" 256 24 "${MFG_SYS_MFR}"
     mfg_cfg_set_bytes ${bin_file} "MFG_SYS_PDN" 280 24 "${MFG_SYS_PDN}"
     mfg_cfg_set_bytes ${bin_file} "MFG_SYS_VER" 304 512 "${MFG_SYS_VER}"
-    mfg_cfg_set_bytes ${bin_file} "MFG_BSB_MFR" 816 24 "${MFG_BSB_MFR}" 
+    mfg_cfg_set_bytes ${bin_file} "MFG_BSB_MFR" 816 24 "${MFG_BSB_MFR}"
     mfg_cfg_set_bytes ${bin_file} "MFG_BSB_PDN" 840 24 "${MFG_BSB_PDN}"
     mfg_cfg_set_bytes ${bin_file} "MFG_BSB_VER" 864 24 "${MFG_BSB_VER}"
     mfg_cfg_set_bytes ${bin_file} "MFG_BSB_SN" 888 24 "${MFG_BSB_SN}"
@@ -849,7 +849,7 @@ sys_cfg()
     chattr -i ${sys_cfg_sysfs}
     cp ${tmp_file} ${sys_cfg_sysfs}
     sync
-    has_sys_cfg=1 
+    has_sys_cfg=1
   fi
 
   rm -f ${tmp_file}
@@ -1717,6 +1717,16 @@ arm_cfg_get_value()
       || [ "$name" = "PXE_DHCP_CLASS_ID" ] \
       || [ "$name" = "BF_BUNDLE_VERSION" ]; then
       value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | tr -d '\0')
+
+      # For BOOTX_DEVPATH, when converting from binary back to text,
+      # we need to ESC the backslashes. This is so if we later
+      # convert that configuration back to binary, the path is
+      # preserved correctly.
+      # Example: "\EFI\debian\grubaa64.efi"  ==> "\\EFI\\debian\\grubaa64.efi"
+      if [[ "$name" == "BOOT"*"_DEVPATH" ]]; then
+         value=${value//\\/\\\\}
+      fi
+
       if [[ "$name" == "BOOT"*"_DESC" ]] \
       || [[ "$name" == "BOOT"*"_ARGS" ]] \
       || [[ "$name" == "BOOT"*"_DEVPATH" ]]; then
