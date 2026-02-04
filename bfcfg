@@ -37,7 +37,7 @@ TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 trap "rm -rf $TMP_DIR; exit 1" TERM INT
 
-bfcfg_version=4.6
+bfcfg_version=4.7
 bfcfg_rc=0
 cfg_file=/etc/bf.cfg
 log_file=/tmp/bfcfg.log
@@ -1934,6 +1934,16 @@ arm_cfg_get_value()
       || [ "$name" = "PXE_DHCP_CLASS_ID" ] \
       || [ "$name" = "BF_BUNDLE_VERSION" ]; then
       value=$(dd if=${in_file} skip=${offset} count=${size} bs=1 2> /dev/null | tr -d '\0')
+
+      # For BOOTX_DEVPATH, when converting from binary back to text,
+      # we need to ESC the backslashes. This is so if we later
+      # convert that configuration back to binary, the path is
+      # preserved correctly.
+      # Example: "\EFI\debian\grubaa64.efi"  ==> "\\EFI\\debian\\grubaa64.efi"
+      if [[ "$name" == "BOOT"*"_DEVPATH" ]]; then
+         value=${value//\\/\\\\}
+      fi
+
       if [[ "$name" == "BOOT"*"_DESC" ]] \
       || [[ "$name" == "BOOT"*"_ARGS" ]] \
       || [[ "$name" == "BOOT"*"_DEVPATH" ]]; then
