@@ -1724,7 +1724,7 @@ arm_cfg_get_value()
       # preserved correctly.
       # Example: "\EFI\debian\grubaa64.efi"  ==> "\\EFI\\debian\\grubaa64.efi"
       if [[ "$name" == "BOOT"*"_DEVPATH" ]]; then
-	  value=${value//\\/\\\\}
+         value=${value//\\/\\\\}
       fi
 
       if [[ "$name" == "BOOT"*"_DESC" ]] \
