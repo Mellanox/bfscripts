@@ -35,6 +35,8 @@ import struct
 import binascii
 import os
 import sys
+import subprocess
+from pathlib import Path
 
 LifeCycleState = [ 'Production', 'Secure', 'Non-Secure', 'RMA' ]
 
@@ -151,6 +153,14 @@ class ChipSecureBootStatus:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Dump BlueField platform secure boot status information.")
     options = parser.parse_args()
+
+    bf_chip = subprocess.check_output(["bffamily", "--chip"], text=True).strip()
+
+    script_name = Path(sys.argv[0]).name
+
+    if bf_chip == "BlueField-4":
+        print(f'{script_name} is NOT supported for BlueField-4', file=sys.stderr)
+        sys.exit(1)
 
     '''
     Initially BfSbStatus EFI variable is created using the EFI Global Variable GUID which
