@@ -117,7 +117,7 @@ elif [[ "$bfversion" = "$BF3_PLATFORM_ID" ]]; then
     PART_NUMBER=$(lspci -s "$(bfhcafw bus)" -vv | grep PN)
 
 else
-    echo "Unknown platform"
+    show_chip
     exit 1
 fi
 
