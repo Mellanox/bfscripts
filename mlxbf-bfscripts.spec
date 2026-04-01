@@ -17,7 +17,8 @@ BuildRequires: /usr/bin/pathfix.py
 
 Requires: mlxbf-bootctl
 # Note: mlxbf-bootimages is provided by mlxbf-aarch64-firmware on Fedora.
-Requires: mlxbf-bootimages
+# Not required on BlueField-4; kept as a weak dependency for BF1/BF2/BF3.
+Recommends: mlxbf-bootimages
 Requires: bash
 Requires: python3
 Requires: grub2-tools
@@ -29,6 +30,7 @@ Requires: util-linux
 Requires: binutils
 Requires: systemd
 Requires: gzip
+
 
 %description
 Useful scripts for managing Mellanox BlueField hardware.
