@@ -3708,7 +3708,7 @@ bf4_cfg()
   dump_mode=0
 
   # Parse the arguments.
-  options=$(getopt -n bfcfgl: -o dhvl -l dump,dump-level:,help,version -- "$@")
+  options=$(getopt -n bfcfg -o dhvl: -l dump,dump-level:,help,version -- "$@")
   eval set -- "$options"
   while [ "$1" != -- ]; do
     case $1 in
