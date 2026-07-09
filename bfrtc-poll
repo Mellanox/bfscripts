@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# Read RTC time to trigger FW repair of invalid dates
+if command -v hwclock >/dev/null 2>&1; then
+	if command -v timeout >/dev/null 2>&1; then
+		timeout 5 hwclock --show >/dev/null 2>&1
+	else
+		hwclock --show >/dev/null 2>&1
+	fi
+fi
