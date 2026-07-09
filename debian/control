@@ -10,7 +10,7 @@ Vcs-Git: https://github.com/Mellanox/bfscripts.git
 
 Package: mlxbf-scripts
 Architecture: any
-Depends: ${misc:Depends}, mlxbf-bootctl, python3, gzip
+Depends: ${misc:Depends}, mlxbf-bootctl, python3, gzip, util-linux
 Recommends: mlxbf-bootimages | mlxbf-bootimages-devsigned | mlxbf-bootimages-signed
 Description: Contains Mellanox BlueField scripts
  Contains Mellanox BlueField scripts that serve different ancillary purposes.
