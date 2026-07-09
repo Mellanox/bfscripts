@@ -1,0 +1,8 @@
+[Unit]
+Description=Read RTC time to trigger FW repair of invalid dates
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bfrtc-poll
+StandardOutput=journal+console
+StandardError=journal
