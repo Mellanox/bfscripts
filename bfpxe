@@ -99,6 +99,8 @@ EOF
     if [ "$ifaddr" = "dhcp6" ]; then
       if [ -x /sbin/dhclient ]; then
         /sbin/dhclient -6 "$ifname"
+      elif [ -x /usr/sbin/dhcpcd ]; then
+        /usr/sbin/dhcpcd -6 -w -t 30 "$ifname"
       fi
       if [ -n "$TMP_MNT" ]; then
         sed -i '/Address =/d' "$TMP_MNT"/etc/systemd/network/05-"${ifname}".network
@@ -109,6 +111,8 @@ EOF
       ifconfig "$ifname" 0.0.0.0 up
       if [ -x /sbin/dhclient ]; then
         /sbin/dhclient "$ifname"
+      elif [ -x /usr/sbin/dhcpcd ]; then
+        /usr/sbin/dhcpcd -4 -w -t 30 "$ifname"
       else
         udhcpc -R -b -A 5 -T 3 -t 10 -i "$ifname"
       fi
