@@ -1,6 +1,6 @@
 #!/bin/sh -e
 
-# Copyright (c) 2017, Mellanox Technologies
+# Copyright (c) 2017-2026, Mellanox Technologies
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -27,13 +27,6 @@
 # of the authors and should not be interpreted as representing official policies,
 # either expressed or implied, of the FreeBSD Project.
 
-bf_chip=$(bffamily --chip)
-
-if [ "$bf_chip" = "BlueField-4" ]; then
-    echo "${0##*/} is NOT supported for BlueField-4" >&2
-    exit 1
-fi
-
 PROGNAME=$(basename "$0")
 TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
@@ -52,14 +45,16 @@ Usage: $PROGNAME [--help|-h]
 Prints version information for currently installed software.
 
 Options:
-  --help,-h              print this message
-  --part,-p PARTITIONS   print version information for all boot partitions
+  --help,-h              Print this message.
+  --part,-p PARTITIONS   Only supported on BF2 and BF3.
+                         Print version information for all boot partitions
                          specified in a comma-delimited list. For example,
                          "-p0,1" will print bootloader versions for
                          partition 0, and then partition 1. "-p1" will
                          print only partition 1. If -p is not specified,
                          the current primary partition will be printed.
-  --file,-f FILE         print BSP version information from a BFB file instead
+  --file,-f FILE         Only supported on BF2 and BF3.
+                         Print BSP version information from a BFB file instead
                          of what is installed.
 EOF
 }
@@ -261,7 +256,13 @@ do
     esac
 done
 
+bf_chip=$(bffamily --chip)
+
 if [ -n "$FILE" ]; then
+    if [ "$bf_chip" = "BlueField-4" ]; then
+        err "File mode is not supported on $bf_chip"
+        exit 1
+    fi
     if [ ! -r $FILE ]; then
         err "fatal: $FILE does not exist or is not readable by the current user"
         exit 1
@@ -273,26 +274,40 @@ if [ -n "$FILE" ]; then
     exit 0
 fi
 
-m_uid=$(id -u)
-
-if [ "$m_uid" -ne 0 ]; then
-    err "fatal: must be run as root to check currently installed software"
-    exit 1
-fi
-
 # Print bootloader versions
-if [ -z "$PARTLIST" ]; then
-    # Identify current primary boot partition and print versions
-    print_path_vers $(mlxbf-bootctl | grep "primary" | cut -d ' ' -f 2)
+if [ "$bf_chip" = "BlueField-4" ]; then
+    if [ -r "/sys/class/dmi/id/bios_version" ]; then
+        sbios_version="$(cat /sys/class/dmi/id/bios_version 2>/dev/null)"
+    else
+        sbios_version="Unknown"
+    fi
+    if [ -r "/sys/class/dmi/id/bios_date" ]; then
+        sbios_release_date="$(cat /sys/class/dmi/id/bios_date 2>/dev/null)"
+    else
+        sbios_release_date="Unknown"
+    fi
+    echo "BlueField SBIOS version: $sbios_version"
+    echo "BlueField SBIOS release date: $sbios_release_date"
+    echo
 else
-    for part in $(echo $PARTLIST | cut -d"," -f1- --output-delimiter=" "); do
-        if [ "$part" -ne 0 ] && [ "$part" -ne 1 ]; then
-            err "err: bad partition $part"
-            continue
-        fi
+    m_uid=$(id -u)
+    if [ "$m_uid" -ne 0 ]; then
+        err "fatal: must be run as root to check currently installed software"
+        exit 1
+    fi
+    if [ -z "$PARTLIST" ]; then
+        # Identify current primary boot partition and print versions
+        print_path_vers $(mlxbf-bootctl | grep "primary" | cut -d ' ' -f 2)
+    else
+        for part in $(echo $PARTLIST | cut -d"," -f1- --output-delimiter=" "); do
+            if [ "$part" -ne 0 ] && [ "$part" -ne 1 ]; then
+                err "err: bad partition $part"
+                continue
+            fi
 
-        print_path_vers /dev/mmcblk0boot$part
-    done
+            print_path_vers /dev/mmcblk0boot$part
+        done
+    fi
 fi
 
 # Print BlueField version number if Yocto version file is present

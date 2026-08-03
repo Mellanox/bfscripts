@@ -23,7 +23,7 @@ Overview of each file:
 - **bfsbkeys** Dump all public keys in ATF. ***(Not supported on BlueField-4.)***
 - **bfsbverify** Read BFB file from file or device and verify RoTPK and CoT.
 - **bftraining_results** Read DDR5 training parameters from ACPI.
-- **bfver** Print ATF, UEFI and rootfs versions. ***(Not supported on BlueField-4.)***
+- **bfver** Print ATF, UEFI and rootfs versions.
 - **bfvcheck** Check whether software versions installed match those in current release. ***(Not supported on BlueField-4.)***
 - **bfvcheck.service** Companion service to bfvcheck, runs bfvcheck at boot time.
 - **mlx-mkbfb** Builds and extracts BFB files.
