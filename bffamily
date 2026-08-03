@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2018, Mellanox Technologies
+# Copyright (c) 2018-2026, Mellanox Technologies
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -41,16 +41,33 @@ usage()
 
 show_chip()
 {
-  if grep -q TH500 /sys/firmware/acpi/tables/DSDT 2>/dev/null; then
-    echo "BlueField-4"
-  elif grep -q "MLNXBF33" /sys/firmware/acpi/tables/SSDT* 2>/dev/null; then
-    echo "BlueField-3"
-  elif grep -q "MLNXBF22" /sys/firmware/acpi/tables/SSDT* 2>/dev/null; then
-    echo "BlueField-2"
-  elif grep -q "MLNXBF02" /sys/firmware/acpi/tables/SSDT* 2>/dev/null; then
-    echo "BlueField-1"
+  # If running as root then use the ACPI tables to determine
+  # the correct chip ID, else try the FRU data stored in SMBIOS tables.
+  m_uid=$(id -u)
+  if [ "$m_uid" -eq 0 ]; then
+    if grep -q TH500 /sys/firmware/acpi/tables/DSDT 2>/dev/null; then
+      echo "BlueField-4"
+    elif grep -q "MLNXBF33" /sys/firmware/acpi/tables/SSDT* 2>/dev/null; then
+      echo "BlueField-3"
+    elif grep -q "MLNXBF22" /sys/firmware/acpi/tables/SSDT* 2>/dev/null; then
+      echo "BlueField-2"
+    elif grep -q "MLNXBF02" /sys/firmware/acpi/tables/SSDT* 2>/dev/null; then
+      echo "BlueField-1"
+    else
+      echo "Unknown"
+    fi
   else
-    echo "Unknown"
+    if [ -r "/sys/class/dmi/id/product_name" ]; then
+      case "$(cat "/sys/class/dmi/id/product_name" 2>/dev/null)" in
+        "BlueField-4"*) echo "BlueField-4" ;;
+        "BlueField-3"*) echo "BlueField-3" ;;
+        "BlueField-2"*) echo "BlueField-2" ;;
+        "BlueField-1"*) echo "BlueField-1" ;;
+        *) echo "Unknown" ;;
+      esac
+    else
+      echo "Unknown"
+    fi
   fi
 }
 
