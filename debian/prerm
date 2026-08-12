@@ -10,10 +10,12 @@ if which deb-systemd-helper >/dev/null 2>/dev/null; then
 	if [ -z "$D" ]; then
 		deb-systemd-helper stop bfvcheck.service
 		deb-systemd-helper stop bfup.service
+		deb-systemd-helper stop bfrtc-poll.timer
 	fi
 
 	deb-systemd-helper "$OPTS" disable bfvcheck.service
 	deb-systemd-helper "$OPTS" disable bfup.service
+	deb-systemd-helper "$OPTS" disable bfrtc-poll.timer
 fi
 
 #DEBHELPER#
