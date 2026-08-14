@@ -12,10 +12,12 @@ if which deb-systemd-helper >/dev/null 2>/dev/null; then
 
 	deb-systemd-helper "$OPTS" enable bfvcheck.service
 	deb-systemd-helper "$OPTS" enable bfup.service
+	deb-systemd-helper "$OPTS" enable bfrtc-poll.timer
 
 	if [ -z "$D" ]; then
 		deb-systemd-helper restart bfvcheck.service
 		deb-systemd-helper restart bfup.service
+		deb-systemd-helper restart bfrtc-poll.timer
 	fi
 fi
 

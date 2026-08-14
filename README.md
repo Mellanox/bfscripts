@@ -29,3 +29,5 @@ Overview of each file:
 - **mlx-mkbfb** Builds and extracts BFB files.
 - **bfup** Informs that linux is running via rshlog message and gpio pin
 - **bfup.services** Companion service to bfup, runs bfup at boot time.
+- **bfrtc-poll** Read RTC time to trigger FW repair of invalid dates.
+- **bfrtc-poll.timer** Companion timer to bfrtc-poll, runs bfrtc-poll periodically.
