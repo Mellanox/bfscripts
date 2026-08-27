@@ -3660,6 +3660,7 @@ bf4_usage()
   if [ "$bf_chip" = "BlueField-4" ]; then
     echo "syntax: bfcfg [--help|-h] [--version|-v]"
     echo "              [--dump|-d] [--dump-level|-l <${DUMP_LEVEL_NONE}-${DUMP_LEVEL_MAX}>]"
+    echo "              [--dump-osarg|-o]"
   fi
 }
 
@@ -3708,12 +3709,13 @@ bf4_cfg()
   dump_mode=0
 
   # Parse the arguments.
-  options=$(getopt -n bfcfg -o dhvl: -l dump,dump-level:,help,version -- "$@")
+  options=$(getopt -n bfcfg -o dhovl: -l dump,dump-level:,dump-osarg,help,version -- "$@")
   eval set -- "$options"
   while [ "$1" != -- ]; do
     case $1 in
       --dump|-d) dump_mode=1;;
       --dump-level|-l) dump_level=$2 ;;
+      --dump-osarg|-o) print_osarg; exit 0;;
       --help|-h) bf4_usage; exit 0 ;;
       --version|-v) echo "$0 version '$bfcfg_version'"; exit 0 ;;
     esac
