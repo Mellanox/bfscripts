@@ -47,10 +47,6 @@ norm_ver () {
 
 bf_chip=$(bffamily --chip)
 
-if [ "$bf_chip" = "BlueField-4" ]; then
-    echo "${0##*/} is NOT supported for BlueField-4" >&2
-    exit 1
-fi
 
 echo "Beginning version check..."
 vlog "start"

@@ -3,6 +3,7 @@ Description=Read RTC time to trigger FW repair of invalid dates
 
 [Service]
 Type=oneshot
+ExecCondition=/bin/sh -c '! /usr/bin/bffamily --chip | grep -q BlueField-4'
 ExecStart=/usr/bin/bfrtc-poll
 StandardOutput=journal+console
 StandardError=journal
