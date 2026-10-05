@@ -4,6 +4,7 @@ After=getty.target
 
 [Service]
 Type=idle
+ExecCondition=/bin/sh -c '! /usr/bin/bffamily --chip | grep -q BlueField-4'
 ExecStart=/usr/bin/bfvcheck
 StandardOutput=journal+console
 
