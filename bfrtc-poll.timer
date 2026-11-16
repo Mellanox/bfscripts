@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically read RTC time to trigger FW repair of invalid dates
+
+[Timer]
+OnBootSec=30min
+OnUnitActiveSec=30min
+AccuracySec=1min
+Unit=bfrtc-poll.service
+
+[Install]
+WantedBy=timers.target
